@@ -1,0 +1,216 @@
+// Prisma schema for n8n Health Monitoring Dashboard
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum ServerStatus {
+  ONLINE
+  OFFLINE
+  DEGRADED
+  UNKNOWN
+}
+
+enum WorkflowStatus {
+  ACTIVE
+  INACTIVE
+  RUNNING
+  FAILED
+}
+
+enum ExecutionStatus {
+  SUCCESS
+  ERROR
+  RUNNING
+  WAITING
+  CANCELLED
+}
+
+enum ErrorSeverity {
+  CRITICAL
+  WARNING
+  INFO
+}
+
+enum UserRole {
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+// Models
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(MEMBER)
+  accounts      Account[]
+  sessions      Session[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Server {
+  id              String       @id @default(cuid())
+  name            String
+  url             String
+  apiKey          String       @db.Text // Encrypted
+  status          ServerStatus @default(UNKNOWN)
+  lastChecked     DateTime?
+  pollingInterval Int          @default(30) // in seconds
+  enableWebhook   Boolean      @default(false)
+  skipSSL         Boolean      @default(false)
+  workflows       Workflow[]
+  errors          ErrorLog[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([status])
+}
+
+model Workflow {
+  id             String         @id @default(cuid())
+  n8nId          String
+  name           String
+  active         Boolean        @default(false)
+  status         WorkflowStatus @default(INACTIVE)
+  serverId       String
+  server         Server         @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  executions     Execution[]
+  errors         ErrorLog[]
+  lastExecution  DateTime?
+  executionCount Int            @default(0)
+  avgExecTime    Int            @default(0) // in milliseconds
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([serverId, n8nId])
+  @@index([serverId])
+  @@index([status])
+}
+
+model Execution {
+  id          String          @id @default(cuid())
+  n8nId       String
+  workflowId  String
+  workflow    Workflow        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  status      ExecutionStatus
+  startedAt   DateTime
+  finishedAt  DateTime?
+  duration    Int? // in milliseconds
+  mode        String? // e.g., "trigger", "manual", "retry"
+  retryOf     String? // execution ID if this is a retry
+  data        Json? // execution data summary
+  createdAt   DateTime        @default(now())
+
+  @@index([workflowId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model ErrorLog {
+  id          String        @id @default(cuid())
+  workflowId  String
+  workflow    Workflow      @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  serverId    String
+  server      Server        @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  executionId String?
+  message     String        @db.Text
+  severity    ErrorSeverity @default(WARNING)
+  stackTrace  String?       @db.Text
+  nodeType    String? // e.g., "n8n-nodes-base.httpRequest"
+  nodeName    String?
+  resolved    Boolean       @default(false)
+  resolvedAt  DateTime?
+  resolvedBy  String? // user ID
+  aiAnalysis  AIAnalysis?
+  timestamp   DateTime      @default(now())
+  createdAt   DateTime      @default(now())
+
+  @@index([workflowId])
+  @@index([serverId])
+  @@index([severity])
+  @@index([resolved])
+  @@index([timestamp])
+}
+
+model AIAnalysis {
+  id            String   @id @default(cuid())
+  errorId       String   @unique
+  error         ErrorLog @relation(fields: [errorId], references: [id], onDelete: Cascade)
+  provider      String // e.g., "openai", "anthropic", "ollama"
+  model         String // e.g., "gpt-4-turbo", "claude-3-opus"
+  confidence    Int // percentage 0-100
+  rootCause     String   @db.Text
+  suggestedFix  Json // array of strings
+  similarIssues Json // array of { id, workflow, resolution }
+  rawResponse   Json? // full API response for debugging
+  tokenUsage    Int? // for cost tracking
+  createdAt     DateTime @default(now())
+
+  @@index([provider])
+}
+
+model Settings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WebhookEvent {
+  id        String   @id @default(cuid())
+  serverId  String
+  eventType String // e.g., "workflow.started", "workflow.completed", "workflow.failed"
+  payload   Json
+  processed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([serverId])
+  @@index([processed])
+  @@index([createdAt])
+}

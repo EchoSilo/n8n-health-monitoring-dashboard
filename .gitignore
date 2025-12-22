@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+
+# Next.js
+.next/
+out/
+build/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Keys and secrets
+*.pem
+*.key
+.sentryclirc
+
+# TypeScript
+*.tsbuildinfo
+
+# Prisma
+prisma/migrations/*_migration.sql.bak
+
+# Vercel
+.vercel
+
+# Claude Code configuration
+.claude/
+CLAUDE.md
+
+# Playwright MCP screenshots
+.playwright-mcp/
+
+# Design reference (MagicPatterns export)
+magicpatterns-colorscheme/
