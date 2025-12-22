@@ -22,10 +22,13 @@ import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ReportProblemIcon from '@mui/icons-material/ReportProblem';
 import { ErrorLog, ErrorSeverity, AIAnalysis } from '@/types';
 
 interface ErrorLogPanelProps {
   limit?: number;
+  selectedServerId?: string | null;
 }
 
 // Mock error data
@@ -124,21 +127,37 @@ const mockAIAnalysis: AIAnalysis = {
   createdAt: new Date(),
 };
 
-const severityConfig: Record<ErrorSeverity, { color: 'error' | 'warning' | 'info'; icon: React.ReactElement; label: string }> = {
+const severityConfig: Record<ErrorSeverity, {
+  color: 'error' | 'warning' | 'info';
+  icon: React.ReactElement;
+  label: string;
+  iconBoxBg: string;
+  iconBoxBorder: string;
+  iconColor: string;
+}> = {
   critical: {
     color: 'error',
-    icon: <ErrorIcon sx={{ fontSize: 16 }} />,
+    icon: <ReportProblemIcon sx={{ fontSize: 18 }} />,
     label: 'Critical',
+    iconBoxBg: 'rgba(239, 68, 68, 0.1)',
+    iconBoxBorder: 'rgba(239, 68, 68, 0.2)',
+    iconColor: '#ef4444',
   },
   warning: {
     color: 'warning',
-    icon: <WarningAmberIcon sx={{ fontSize: 16 }} />,
+    icon: <WarningAmberIcon sx={{ fontSize: 18 }} />,
     label: 'Warning',
+    iconBoxBg: 'rgba(245, 158, 11, 0.1)',
+    iconBoxBorder: 'rgba(245, 158, 11, 0.2)',
+    iconColor: '#f59e0b',
   },
   info: {
     color: 'info',
-    icon: <InfoIcon sx={{ fontSize: 16 }} />,
+    icon: <InfoIcon sx={{ fontSize: 18 }} />,
     label: 'Info',
+    iconBoxBg: 'rgba(59, 130, 246, 0.1)',
+    iconBoxBorder: 'rgba(59, 130, 246, 0.2)',
+    iconColor: '#3b82f6',
   },
 };
 
@@ -153,11 +172,16 @@ function formatTimeAgo(date: Date): string {
   return `${days}d ago`;
 }
 
-export function ErrorLogPanel({ limit }: ErrorLogPanelProps) {
+export function ErrorLogPanel({ limit, selectedServerId }: ErrorLogPanelProps) {
   const [selectedError, setSelectedError] = useState<typeof mockErrors[0] | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const errors = limit ? mockErrors.slice(0, limit) : mockErrors;
+  // Filter errors by selected server
+  const filteredErrors = selectedServerId
+    ? mockErrors.filter(e => e.serverId === selectedServerId)
+    : mockErrors;
+
+  const errors = limit ? filteredErrors.slice(0, limit) : filteredErrors;
 
   const handleErrorClick = (error: typeof mockErrors[0]) => {
     setSelectedError(error);
@@ -168,11 +192,65 @@ export function ErrorLogPanel({ limit }: ErrorLogPanelProps) {
     setDrawerOpen(false);
   };
 
+  // Empty state
+  if (errors.length === 0) {
+    return (
+      <>
+        <Card
+          sx={{
+            overflow: 'hidden',
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 3,
+            bgcolor: (theme) =>
+              theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.5)' : 'background.paper',
+          }}
+        >
+          <Box
+            sx={{
+              textAlign: 'center',
+              py: 6,
+              px: 3,
+            }}
+          >
+            <Box
+              sx={{
+                width: 48,
+                height: 48,
+                bgcolor: 'rgba(16, 185, 129, 0.1)',
+                border: '1px solid rgba(16, 185, 129, 0.2)',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                mx: 'auto',
+                mb: 1.5,
+              }}
+            >
+              <AutoAwesomeIcon sx={{ fontSize: 24, color: '#10b981' }} />
+            </Box>
+            <Typography variant="body1" color="text.secondary" fontWeight={500}>
+              All systems operational
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, opacity: 0.7 }}>
+              No errors detected in the last 24 hours.
+            </Typography>
+          </Box>
+        </Card>
+      </>
+    );
+  }
+
   return (
     <>
       <Card
         sx={{
           overflow: 'hidden',
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 3,
+          bgcolor: (theme) =>
+            theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.5)' : 'background.paper',
         }}
       >
         <List disablePadding>
@@ -189,53 +267,141 @@ export function ErrorLogPanel({ limit }: ErrorLogPanelProps) {
               >
                 <ListItemButton
                   onClick={() => handleErrorClick(error)}
-                  sx={{ py: 2, px: 2 }}
+                  sx={{
+                    py: 2,
+                    px: 2,
+                    borderLeft: '2px solid transparent',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      bgcolor: (theme) =>
+                        theme.palette.mode === 'dark' ? 'rgba(71, 85, 105, 0.3)' : 'rgba(241, 245, 249, 0.8)',
+                      borderLeftColor: 'primary.main',
+                    },
+                    '&:hover .error-message': {
+                      color: 'primary.main',
+                    },
+                    '&:hover .chevron-icon': {
+                      color: 'primary.main',
+                      transform: 'translateX(4px)',
+                    },
+                  }}
                 >
-                  <Box sx={{ width: '100%' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1, mb: 1 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, width: '100%' }}>
+                    {/* Severity Icon Box */}
+                    <Box
+                      sx={{
+                        p: 1,
+                        bgcolor: severity.iconBoxBg,
+                        border: '1px solid',
+                        borderColor: severity.iconBoxBorder,
+                        borderRadius: 2,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        mt: 0.5,
+                        '& svg': {
+                          color: severity.iconColor,
+                        },
+                      }}
+                    >
+                      {severity.icon}
+                    </Box>
+
+                    {/* Content */}
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      {/* Metadata line */}
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75, flexWrap: 'wrap' }}>
+                        <Typography variant="caption" fontFamily="monospace" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                          {error.timestamp.toLocaleTimeString()}
+                        </Typography>
                         <Chip
                           size="small"
-                          icon={severity.icon}
                           label={severity.label}
                           color={severity.color}
                           sx={{
-                            height: 22,
-                            fontSize: '0.7rem',
-                            '& .MuiChip-icon': {
-                              marginLeft: '4px',
-                            },
+                            height: 20,
+                            fontSize: '0.65rem',
+                            textTransform: 'uppercase',
                           }}
                         />
-                        {error.hasAIAnalysis && (
-                          <Chip
-                            size="small"
-                            icon={<AutoAwesomeIcon sx={{ fontSize: 12 }} />}
-                            label="AI Analysis"
-                            sx={{
-                              height: 22,
-                              fontSize: '0.7rem',
-                              bgcolor: 'rgba(139, 92, 246, 0.15)',
-                              color: '#8b5cf6',
-                              border: '1px solid rgba(139, 92, 246, 0.3)',
-                              '& .MuiChip-icon': {
-                                marginLeft: '4px',
-                                color: 'inherit',
-                              },
-                            }}
-                          />
-                        )}
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>•</Typography>
+                        <Typography
+                          variant="caption"
+                          fontWeight={500}
+                          sx={{
+                            fontSize: '0.75rem',
+                            maxWidth: 120,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {error.workflowName}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>on</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                          {error.serverName}
+                        </Typography>
                       </Box>
-                      <Typography variant="caption" color="text.secondary" fontFamily="monospace">
-                        {formatTimeAgo(error.timestamp)}
+
+                      {/* Error message */}
+                      <Typography
+                        variant="body2"
+                        fontWeight={500}
+                        className="error-message"
+                        sx={{
+                          mb: 1,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          transition: 'color 0.2s',
+                        }}
+                      >
+                        {error.message}
                       </Typography>
+
+                      {/* AI Analysis tag */}
+                      {error.hasAIAnalysis && (
+                        <Box
+                          sx={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 0.5,
+                            bgcolor: 'rgba(139, 92, 246, 0.1)',
+                            border: '1px solid rgba(139, 92, 246, 0.2)',
+                            borderRadius: 4,
+                            px: 1,
+                            py: 0.25,
+                          }}
+                        >
+                          <AutoAwesomeIcon sx={{ fontSize: 12, color: '#a78bfa' }} />
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              fontSize: '0.625rem',
+                              fontWeight: 500,
+                              color: '#a78bfa',
+                            }}
+                          >
+                            AI Analysis Available
+                          </Typography>
+                        </Box>
+                      )}
                     </Box>
-                    <Typography variant="body2" fontWeight={500} sx={{ mb: 0.5 }}>
-                      {error.message.length > 60 ? `${error.message.slice(0, 60)}...` : error.message}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {error.workflowName} • {error.serverName}
-                    </Typography>
+
+                    {/* Chevron */}
+                    <ChevronRightIcon
+                      className="chevron-icon"
+                      sx={{
+                        fontSize: 18,
+                        color: 'text.secondary',
+                        opacity: 0.5,
+                        transition: 'all 0.2s',
+                        alignSelf: 'center',
+                        flexShrink: 0,
+                      }}
+                    />
                   </Box>
                 </ListItemButton>
               </ListItem>

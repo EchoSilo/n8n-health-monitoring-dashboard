@@ -5,3 +5,7 @@ export { ServerHealthGrid } from './ServerHealthGrid';
 export { WorkflowTable } from './WorkflowTable';
 export { ErrorLogPanel } from './ErrorLogPanel';
 export { AIChatbot } from './AIChatbot';
+export { ManageServersDialog } from './ManageServersDialog';
+export { SettingsModal } from './SettingsModal';
+export { ProfileDialog } from './ProfileDialog';
+export { TeamMembersDialog } from './TeamMembersDialog';

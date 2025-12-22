@@ -16,10 +16,11 @@ A self-hosted dashboard for monitoring multiple n8n instances with AI-powered er
 |------------|---------|
 | **Next.js 15** | React framework with App Router, server components |
 | **TypeScript** | Type safety and better DX |
-| **TailwindCSS** | Utility-first styling |
-| **shadcn/ui** | Beautiful, accessible component library |
-| **Tremor** | Dashboard charts & data visualization |
+| **Material UI (MUI) v6** | Complete React component library |
+| **MUI X DataGrid** | Advanced data tables (sorting, filtering, virtual scroll) |
+| **MUI X Charts** | Dashboard charts & data visualization |
 | **TanStack Query** | Data fetching, caching, real-time sync |
+| **Emotion** | CSS-in-JS (included with MUI) |
 
 ### Backend
 | Technology | Purpose |
@@ -175,183 +176,701 @@ enum ExecStatus {
 
 ---
 
-## Wireframe Mockups
+## Wireframe Comparison: Original vs MagicPatterns
 
-### Main Dashboard
+### Key UX Improvements from MagicPatterns (Adopting)
+
+| Feature | Original | MagicPatterns | **Recommendation** |
+|---------|----------|---------------|-------------------|
+| Navigation | Sidebar | Tab-based | ✅ **Tabs** - more content space |
+| AI Access | Sidebar link | Floating chatbot | ✅ **Floating chatbot** - always available |
+| Error Details | Full page | Slide-out drawer | ✅ **Drawer** - maintains context |
+| Server Selection | Static | Click-to-filter | ✅ **Click-to-filter** - intuitive drill-down |
+| Theme | Dark only | Light only | ✅ **Both** - user preference |
+| Metrics | 4 basic | 4 detailed + trends | ✅ **Detailed metrics** with badges |
+| AI Indicator | Button | Badge on errors | ✅ **Badge** - clearer affordance |
+
+### Adopted Design: Hybrid Approach
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  🔧 n8n Health Dashboard                    [Search...]     [⚙️] [👤 User]  │
-├─────────────┬───────────────────────────────────────────────────────────────┤
-│             │                                                               │
-│  📊 Overview│  OVERVIEW                                          [+ Server] │
-│             │  ─────────────────────────────────────────────────────────── │
-│  🖥️ Servers │                                                               │
-│             │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌──────────┐│
-│  ⚡ Workflows│  │  🟢 24      │ │  🔴 3       │ │  🟡 2       │ │ 847      ││
-│             │  │  Online     │ │  Failed     │ │  Degraded   │ │ Workflows││
-│  ❌ Errors   │  │  Servers    │ │  Today      │ │  Servers    │ │ Total    ││
-│             │  └─────────────┘ └─────────────┘ └─────────────┘ └──────────┘│
-│  🤖 AI Help │                                                               │
-│             │  SERVERS                                                      │
-│  ──────────│  ───────────────────────────────────────────────────────────  │
-│             │  ┌─────────────────────┐ ┌─────────────────────┐              │
-│  Settings   │  │ 🟢 Production-US    │ │ 🟢 Production-EU    │              │
-│             │  │ ████████░░ 82%      │ │ █████████░ 91%      │              │
-│             │  │ 156 workflows       │ │ 203 workflows       │              │
-│             │  │ 2 errors today      │ │ 0 errors today      │              │
-│             │  │ Last: 30s ago       │ │ Last: 45s ago       │              │
-│             │  └─────────────────────┘ └─────────────────────┘              │
-│             │                                                               │
-│             │  ┌─────────────────────┐ ┌─────────────────────┐              │
-│             │  │ 🔴 Staging          │ │ 🟢 Client-A         │              │
-│             │  │ ░░░░░░░░░░ OFFLINE  │ │ ██████░░░░ 67%      │              │
-│             │  │ 45 workflows        │ │ 89 workflows        │              │
-│             │  │ Connection failed   │ │ 1 error today       │              │
-│             │  │ Last: 5m ago        │ │ Last: 1m ago        │              │
-│             │  └─────────────────────┘ └─────────────────────┘              │
-│             │                                                               │
-│             │  RECENT ERRORS                                    [View All] │
-│             │  ───────────────────────────────────────────────────────────  │
-│             │  ┌───────────────────────────────────────────────────────────┐│
-│             │  │ ⚠️ HTTP Request Failed - Production-US                    ││
-│             │  │ Workflow: Customer Sync  │  10:32 AM  │ [🤖 Analyze]      ││
-│             │  ├───────────────────────────────────────────────────────────┤│
-│             │  │ ⚠️ Database Connection Timeout - Client-A                 ││
-│             │  │ Workflow: Order Process  │  09:15 AM  │ [🤖 Analyze]      ││
-│             │  └───────────────────────────────────────────────────────────┘│
-└─────────────┴───────────────────────────────────────────────────────────────┘
-```
-
-### Error Details with AI Analysis
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  ← Back to Errors                                                           │
+│  n8n Health Dashboard                                                       │
+│  Multi-Server Workflow Monitoring              [Manage Servers] [🌙] [👤]   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ERROR DETAILS                                                              │
-│  ═══════════════════════════════════════════════════════════════════════   │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │ [🔍 Search workflows...]  [Server ▼]  [Status ▼]  [🔄 Refresh]      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  Server:    Production-US                                                   │
-│  Workflow:  Customer Sync (ID: 1234)                                        │
-│  Node:      HTTP Request                                                    │
-│  Time:      Dec 20, 2025 10:32:14 AM                                       │
-│  Duration:  30.2s                                                           │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐       │
+│  │ TOTAL        │ │ ACTIVE       │ │ ERROR RATE   │ │ AVG EXEC     │       │
+│  │ WORKFLOWS    │ │ EXECUTIONS   │ │              │ │ TIME         │       │
+│  │   847        │ │   12         │ │   4.2%       │ │   234ms      │       │
+│  │   ▲ +12%     │ │   running    │ │   ⚠ High    │ │              │       │
+│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘       │
 │                                                                             │
-│  ┌─ Error Message ──────────────────────────────────────────────────────┐  │
-│  │ ETIMEDOUT: Connection timed out after 30000ms                        │  │
-│  │ at ClientRequest.<anonymous> (/usr/local/lib/node_modules/...)       │  │
-│  │ at Object.onceWrapper (node:events:628:26)                           │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  [📊 Overview]  [📋 Workflows]  [⚠️ Error Logs]                      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
-│  ┌─ 🤖 AI Analysis ─────────────────────────────────────────────────────┐  │
-│  │                                                                       │  │
-│  │  **Root Cause:**                                                     │  │
-│  │  The external API at api.example.com is not responding within the    │  │
-│  │  configured timeout period (30s).                                    │  │
-│  │                                                                       │  │
-│  │  **Suggested Fixes:**                                                │  │
-│  │  1. Check if api.example.com is experiencing downtime               │  │
-│  │  2. Increase timeout in HTTP Request node to 60s                    │  │
-│  │  3. Add retry logic with exponential backoff                        │  │
-│  │  4. Implement circuit breaker pattern for this endpoint             │  │
-│  │                                                                       │  │
-│  │  **Similar Issues:** Found 3 similar errors in the last 7 days      │  │
-│  │                                                                       │  │
-│  │  [📋 Copy Solution]  [🔄 Re-analyze]  [💬 Ask Follow-up]             │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
+│  ● SERVER STATUS                                                           │
+│  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐              │
+│  │ 🟢 Production-US│ │ 🟢 Production-EU│ │ 🔴 Staging      │ (clickable) │
+│  │ n8n.us.co...    │ │ n8n.eu.co...    │ │ n8n.stg.co...   │              │
+│  │ ─────────────── │ │ ─────────────── │ │ ─────────────── │              │
+│  │ WORKFLOWS  156  │ │ WORKFLOWS  203  │ │ WORKFLOWS   45  │              │
+│  │ ERRORS(24H) 2   │ │ ERRORS(24H) 0   │ │ OFFLINE         │              │
+│  │ Ping: 32ms      │ │ Ping: 45ms      │ │ Connection fail │              │
+│  └─────────────────┘ └─────────────────┘ └─────────────────┘              │
 │                                                                             │
-│  [← Previous Error]                              [Next Error →]             │
+│  ┌─────────────────────────────────────┐ ┌─────────────────────────────┐   │
+│  │ ● ACTIVE WORKFLOWS                  │ │ ● RECENT ERRORS             │   │
+│  │ ┌─────────────────────────────────┐ │ │ ┌─────────────────────────┐ │   │
+│  │ │ Customer Sync    🟢 Active      │ │ │ │ ⚠️ HTTP Timeout         │ │   │
+│  │ │ Production-US    234ms          │ │ │ │ Customer Sync • 10:32  │ │   │
+│  │ ├─────────────────────────────────┤ │ │ │ ✨ AI Analysis Ready    │ │   │
+│  │ │ Order Process    🟡 Running     │ │ │ ├─────────────────────────┤ │   │
+│  │ │ Client-A         1.2s           │ │ │ │ 🔴 DB Connection Lost   │ │   │
+│  │ └─────────────────────────────────┘ │ │ │ Order Sync • 09:15     │ │   │
+│  │                      [View All →]   │ │ │ ✨ AI Analysis Ready    │ │   │
+│  └─────────────────────────────────────┘ │ └─────────────────────────┘ │   │
+│                                          │              [View All →]   │   │
+│                                          └─────────────────────────────┘   │
 │                                                                             │
+│                                                           ┌───────────────┐│
+│                                                           │ 💬 AI         ││
+│                                                           │    Assistant  ││
+│                                                           └───────────────┘│
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Add Server Modal
+### AI Analysis Drawer (Slides in from Right)
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│         ┌─────────────────────────────────────────────────────┐             │
-│         │  Add New n8n Server                           [✕]   │             │
-│         ├─────────────────────────────────────────────────────┤             │
-│         │                                                     │             │
-│         │  Server Name                                        │             │
-│         │  ┌─────────────────────────────────────────────┐   │             │
-│         │  │ Production-Asia                             │   │             │
-│         │  └─────────────────────────────────────────────┘   │             │
-│         │                                                     │             │
-│         │  n8n URL                                            │             │
-│         │  ┌─────────────────────────────────────────────┐   │             │
-│         │  │ https://n8n.asia.company.com                │   │             │
-│         │  └─────────────────────────────────────────────┘   │             │
-│         │                                                     │             │
-│         │  API Key                                            │             │
-│         │  ┌─────────────────────────────────────────────┐   │             │
-│         │  │ ••••••••••••••••••••••••                    │   │             │
-│         │  └─────────────────────────────────────────────┘   │             │
-│         │                                                     │             │
-│         │  ☑️ Enable real-time monitoring                     │             │
-│         │  ☐ Receive webhook events                          │             │
-│         │                                                     │             │
-│         │          [Cancel]  [🔗 Test Connection]  [Save]     │             │
-│         │                                                     │             │
-│         └─────────────────────────────────────────────────────┘             │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+                                        ┌─────────────────────────────────────┐
+                                        │ ← ERROR DETAILS              [✕]   │
+                                        ├─────────────────────────────────────┤
+                                        │ 🔴 critical    ERR-2024-001        │
+                                        │                                     │
+                                        │ HTTP Request Timeout                │
+                                        │                                     │
+                                        │ Workflow: Customer Sync             │
+                                        │ Server: Production-US               │
+                                        │ Time: Dec 20, 2025 10:32 AM         │
+                                        ├─────────────────────────────────────┤
+                                        │ ✨ AI ROOT CAUSE ANALYSIS           │
+                                        │    ────────────────────             │
+                                        │    Confidence: 94%                  │
+                                        │                                     │
+                                        │ SUGGESTED RESOLUTION:               │
+                                        │ ① Check api.example.com status      │
+                                        │ ② Increase timeout to 60s           │
+                                        │ ③ Add retry with backoff            │
+                                        │                                     │
+                                        │ SIMILAR PAST ISSUES:                │
+                                        │ ┌─────────────────────────────────┐ │
+                                        │ │ ✓ ERR-2024-098 (Order Sync)    │ │
+                                        │ │   Resolved: Increased timeout  │ │
+                                        │ └─────────────────────────────────┘ │
+                                        ├─────────────────────────────────────┤
+                                        │ STACK TRACE                  [Copy] │
+                                        │ ┌─────────────────────────────────┐ │
+                                        │ │ ETIMEDOUT: Connection timed    │ │
+                                        │ │ out after 30000ms              │ │
+                                        │ │ at ClientRequest.<anonymous>   │ │
+                                        │ └─────────────────────────────────┘ │
+                                        ├─────────────────────────────────────┤
+                                        │ [Close] [Open in n8n] [✓ Resolved] │
+                                        └─────────────────────────────────────┘
+```
+
+### Floating AI Chatbot (Bottom Right)
+```
+┌─────────────────────────────────────────┐
+│ 🤖 n8n AI Assistant              [─][✕] │
+│ Ask about your dashboard                │
+├─────────────────────────────────────────┤
+│                                         │
+│ 🤖 Hi! I'm your n8n AI assistant.      │
+│    Ask me about workflows, servers,     │
+│    or errors.                           │
+│                                         │
+│                        ┌───────────────┐│
+│                        │ How many      ││
+│                        │ servers are   ││
+│                        │ online?    👤 ││
+│                        └───────────────┘│
+│                                         │
+│ 🤖 You have 3 servers connected:       │
+│    • Production-US (online)             │
+│    • Production-EU (online)             │
+│    • Staging (offline)                  │
+│                                         │
+├─────────────────────────────────────────┤
+│ [Ask about workflows, servers...]  [➤] │
+└─────────────────────────────────────────┘
+```
+
+### Manage Servers Dialog (Enhanced from MagicPatterns)
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 🖥️ Manage n8n Servers                                  [✕]  │
+│ Add or remove server connections and manage API credentials │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ ┌─ + ADD NEW SERVER ──────────────────────────────────────┐ │
+│ │                                                         │ │
+│ │  Server Name              Server URL                    │ │
+│ │  ┌───────────────────┐    ┌─────────────────────────┐  │ │
+│ │  │ Production-Asia   │    │ https://n8n.asia.co...  │  │ │
+│ │  └───────────────────┘    └─────────────────────────┘  │ │
+│ │                                                         │ │
+│ │  🔐 API Key                                             │ │
+│ │  ┌─────────────────────────────────────────────────┐   │ │
+│ │  │ ••••••••••••••••••••••••••••                    │   │ │
+│ │  └─────────────────────────────────────────────────┘   │ │
+│ │  ℹ️ Your API key is stored securely and encrypted.     │ │
+│ │                                                         │ │
+│ │  Advanced Options ▼                                     │ │
+│ │  ┌─────────────────────────────────────────────────┐   │ │
+│ │  │ Polling Interval:  [30 seconds ▼]               │   │ │
+│ │  │ ☑️ Enable webhook receiver                       │   │ │
+│ │  │ ☐ Skip SSL verification (dev only)              │   │ │
+│ │  └─────────────────────────────────────────────────┘   │ │
+│ │                                                         │ │
+│ │               [🔗 Test Connection]  [+ Add Server]      │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                                                             │
+│ CONNECTED SERVERS                                      [3]  │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ 🟢 Production-US                              [✏️] [🗑️] │ │
+│ │    https://n8n.us.company.com • 156 workflows           │ │
+│ ├─────────────────────────────────────────────────────────┤ │
+│ │ 🟢 Production-EU                              [✏️] [🗑️] │ │
+│ │    https://n8n.eu.company.com • 203 workflows           │ │
+│ ├─────────────────────────────────────────────────────────┤ │
+│ │ 🔴 Staging (offline)                          [✏️] [🗑️] │ │
+│ │    https://n8n.staging.company.com • 45 workflows       │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                    [Close]  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Improvements over MagicPatterns:**
+- ✅ Test Connection button (validates before adding)
+- ✅ Edit button per server (not just delete)
+- ✅ Advanced options (polling interval, webhooks, SSL)
+- ✅ Workflow count shown per server
+
+### Settings Modal
+```
+┌─────────────────────────────────────────────────────────────┐
+│ ⚙️ Settings                                            [✕]  │
+├───────────────┬─────────────────────────────────────────────┤
+│               │                                             │
+│  General      │  APPEARANCE                                 │
+│  ────────     │  ─────────────────────────────────────────  │
+│  AI Provider  │                                             │
+│  ────────     │  Theme                                      │
+│  Notifications│  ○ Light  ○ Dark  ● System                  │
+│  ────────     │                                             │
+│  Data & Logs  │  Compact Mode                               │
+│               │  ☐ Use compact table rows                   │
+│               │                                             │
+│               │  ─────────────────────────────────────────  │
+│               │  DASHBOARD                                  │
+│               │  ─────────────────────────────────────────  │
+│               │                                             │
+│               │  Default Tab                                │
+│               │  [Overview ▼]                               │
+│               │                                             │
+│               │  Auto-refresh Interval                      │
+│               │  [30 seconds ▼]                             │
+│               │                                             │
+│               │  Show Offline Servers                       │
+│               │  ● Yes  ○ No                                │
+│               │                                             │
+├───────────────┼─────────────────────────────────────────────┤
+│               │                                             │
+│  AI Provider  │  AI CONFIGURATION                           │
+│  (selected)   │  ─────────────────────────────────────────  │
+│               │                                             │
+│               │  Primary Provider                           │
+│               │  ┌─────────────────────────────────────┐   │
+│               │  │ ● OpenAI (GPT-4)                    │   │
+│               │  │ ○ Anthropic (Claude)                │   │
+│               │  │ ○ Local (Ollama)                    │   │
+│               │  └─────────────────────────────────────┘   │
+│               │                                             │
+│               │  OpenAI API Key                             │
+│               │  ┌─────────────────────────────────────┐   │
+│               │  │ sk-••••••••••••••••••••            │   │
+│               │  └─────────────────────────────────────┘   │
+│               │                                             │
+│               │  Model                                      │
+│               │  [gpt-4-turbo ▼]                            │
+│               │                                             │
+│               │  ☑️ Cache AI responses (saves costs)        │
+│               │  ☑️ Include similar past issues             │
+│               │                                             │
+├───────────────┼─────────────────────────────────────────────┤
+│               │                                             │
+│  Notifications│  NOTIFICATION CHANNELS                      │
+│  (selected)   │  ─────────────────────────────────────────  │
+│               │                                             │
+│               │  ☑️ Email Alerts                            │
+│               │     └─ team@company.com                     │
+│               │                                             │
+│               │  ☐ Slack Webhook                            │
+│               │     └─ [Configure...]                       │
+│               │                                             │
+│               │  ☐ Discord Webhook                          │
+│               │     └─ [Configure...]                       │
+│               │                                             │
+│               │  ALERT THRESHOLDS                           │
+│               │  ─────────────────────────────────────────  │
+│               │                                             │
+│               │  Notify when error rate exceeds:            │
+│               │  [5] %                                      │
+│               │                                             │
+│               │  Notify when server offline for:            │
+│               │  [2] minutes                                │
+│               │                                             │
+├───────────────┴─────────────────────────────────────────────┤
+│                              [Cancel]  [Save Changes]       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### User Profile Dropdown
+```
+┌──────────────────────────────────────────────┐
+│  👤 Jamal Ahmed                         ▼    │
+└──────────────────────────────────────────────┘
+                    │
+                    ▼
+        ┌───────────────────────────────┐
+        │  ┌────┐                       │
+        │  │ JA │  Jamal Ahmed          │
+        │  └────┘  jamal@company.com    │
+        │          Admin                │
+        ├───────────────────────────────┤
+        │  👤 My Profile                │
+        │  🔔 Notification Preferences  │
+        │  🔑 API Keys                  │
+        ├───────────────────────────────┤
+        │  👥 Team Members              │
+        │  📊 Usage & Billing           │
+        ├───────────────────────────────┤
+        │  📚 Documentation             │
+        │  💬 Support                   │
+        ├───────────────────────────────┤
+        │  🚪 Sign Out                  │
+        └───────────────────────────────┘
+
+### My Profile Page/Modal
+┌─────────────────────────────────────────────────────────────┐
+│ 👤 My Profile                                          [✕]  │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│        ┌──────────┐                                         │
+│        │          │  [Change Photo]                         │
+│        │    JA    │                                         │
+│        │          │                                         │
+│        └──────────┘                                         │
+│                                                             │
+│  Full Name                                                  │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ Jamal Ahmed                                         │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  Email                                                      │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ jamal@company.com                      (via Google) │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  Role                                                       │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ Admin                                               │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ─────────────────────────────────────────────────────────  │
+│  CONNECTED ACCOUNTS                                         │
+│  ─────────────────────────────────────────────────────────  │
+│                                                             │
+│  🔗 Google      jamal@company.com           [Connected ✓]   │
+│  🔗 GitHub      @jamalahmed                 [Connect]       │
+│                                                             │
+│  ─────────────────────────────────────────────────────────  │
+│  DANGER ZONE                                                │
+│  ─────────────────────────────────────────────────────────  │
+│                                                             │
+│  [🗑️ Delete Account]                                        │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│                              [Cancel]  [Save Changes]       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Team Members Page (Admin only)
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 👥 Team Members                              [+ Invite]     │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ 🔍 Search members...                                    ││
+│  └─────────────────────────────────────────────────────────┘│
+│                                                             │
+│  NAME                    EMAIL                 ROLE    ACT  │
+│  ───────────────────────────────────────────────────────── │
+│  ┌────┐                                                     │
+│  │ JA │ Jamal Ahmed      jamal@co...     Admin    [···]    │
+│  └────┘                                        (You)       │
+│  ───────────────────────────────────────────────────────── │
+│  ┌────┐                                                     │
+│  │ SK │ Sarah Kim        sarah@co...     Member   [···]    │
+│  └────┘                                                     │
+│  ───────────────────────────────────────────────────────── │
+│  ┌────┐                                                     │
+│  │ MJ │ Mike Johnson     mike@co...      Viewer   [···]    │
+│  └────┘                                                     │
+│                                                             │
+│  PENDING INVITES                                            │
+│  ───────────────────────────────────────────────────────── │
+│  📧 alex@company.com               Invited 2 days ago      │
+│                                    [Resend] [Cancel]        │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+
+Roles:
+- Admin: Full access, manage team, settings
+- Member: View all, manage servers, use AI
+- Viewer: View only, no modifications
 ```
 
 ---
 
 ## Color Scheme & Design
 
-**Theme:** Dark mode primary (with light mode option)
+**Theme:** Light/Dark mode toggle (system preference default)
 
+### Light Mode (Default - Apple-inspired)
 | Element | Color |
 |---------|-------|
-| Background | `#0f0f14` (deep navy black) |
-| Cards | `#1a1a1a` with subtle border |
-| Primary | `#6366f1` (Indigo) |
+| Background | `#f5f5f7` (light gray) |
+| Cards | `#ffffff` with dashed border |
+| Primary | `#1f2933` (near black) |
+| Accent | `#6366f1` (Indigo) |
 | Success | `#22c55e` (Green) |
 | Warning | `#f59e0b` (Amber) |
 | Error | `#ef4444` (Red) |
-| Text | `#fafafa` (White) |
-| Muted | `#71717a` (Gray) |
+| Text | `#1f2933` (dark gray) |
+| Muted | `#6b7280` (gray) |
+| AI Accent | `#a855f7` (Purple) |
 
-**Design Principles:**
-- Clean, minimal interface
-- High contrast for readability
+### Dark Mode
+| Element | Color |
+|---------|-------|
+| Background | `#0f0f0f` (near black) |
+| Cards | `#1a1a1a` with subtle border |
+| Primary | `#fafafa` (white) |
+| Accent | `#818cf8` (Light Indigo) |
+| Success | `#4ade80` (Light Green) |
+| Warning | `#fbbf24` (Light Amber) |
+| Error | `#f87171` (Light Red) |
+| Text | `#fafafa` (white) |
+| Muted | `#9ca3af` (light gray) |
+| AI Accent | `#c084fc` (Light Purple) |
+
+**Design Principles (from MagicPatterns):**
+- Clean, minimal interface with generous whitespace
+- Dashed borders for cards (wireframe/blueprint aesthetic)
+- Monospace fonts for technical data (IDs, URLs, times)
 - Status colors consistent throughout
-- Generous whitespace
 - Smooth animations for state changes
+- Click-to-filter interactions on server cards
+- Contextual drawers over full-page navigation
 
 ---
 
-## Implementation Phases
+## MUI Component Mapping
 
-### Phase 1: MVP (Week 1-2)
-1. Project scaffolding with Next.js 15
-2. Database setup with Prisma + PostgreSQL
-3. Basic server management (CRUD)
-4. n8n API integration
-5. Dashboard overview page
-6. Basic error listing
+| Wireframe Element | MUI Component | Notes |
+|-------------------|---------------|-------|
+| Main Dashboard | `Box`, `Container` | Layout with `sx` prop |
+| Metric Cards | `Card`, `CardContent` | With `Typography` for labels |
+| Navigation Tabs | `Tabs`, `Tab`, `TabPanel` | Overview/Workflows/Errors |
+| Server Grid | `Grid2` + `Card` | Responsive 4-column layout |
+| Workflow Table | `DataGrid` (MUI X) | Sorting, filtering, pagination |
+| Error List | `List`, `ListItem`, `ListItemText` | With `Chip` for severity |
+| AI Drawer | `Drawer` | Anchor right, persistent |
+| AI Chatbot | `Fab` + `Card` | Floating action button trigger |
+| Settings Dialog | `Dialog` + `Tabs` | Full-screen on mobile |
+| Server Dialog | `Dialog` | With `TextField`, `Switch` |
+| Profile Menu | `Menu`, `MenuItem`, `Avatar` | Dropdown from header |
+| Filter Bar | `TextField`, `Select`, `IconButton` | With `InputAdornment` |
+| Status Badges | `Chip` | Color variants for status |
+| Theme Toggle | `IconButton` + `useColorScheme` | MUI built-in dark mode |
 
-### Phase 2: AI Integration (Week 3)
-1. AI provider abstraction layer
-2. Error analysis endpoint
-3. Analysis UI components
-4. Caching for AI responses
+### MUI Theme Configuration
 
-### Phase 3: Real-time & Polish (Week 4)
-1. Webhook receiver endpoints
-2. Real-time updates with Socket.io
-3. UI polish and animations
+```typescript
+// theme/theme.ts
+import { createTheme } from '@mui/material/styles';
+
+export const theme = createTheme({
+  colorSchemes: {
+    light: {
+      palette: {
+        primary: { main: '#1f2933' },
+        secondary: { main: '#6366f1' },
+        success: { main: '#22c55e' },
+        warning: { main: '#f59e0b' },
+        error: { main: '#ef4444' },
+        background: { default: '#f5f5f7', paper: '#ffffff' },
+      },
+    },
+    dark: {
+      palette: {
+        primary: { main: '#fafafa' },
+        secondary: { main: '#818cf8' },
+        success: { main: '#4ade80' },
+        warning: { main: '#fbbf24' },
+        error: { main: '#f87171' },
+        background: { default: '#0f0f0f', paper: '#1a1a1a' },
+      },
+    },
+  },
+  typography: {
+    fontFamily: '"Inter", "Roboto", sans-serif',
+    // Monospace for technical data
+    mono: { fontFamily: '"JetBrains Mono", monospace' },
+  },
+  components: {
+    MuiCard: {
+      styleOverrides: {
+        root: { borderRadius: 12 },
+      },
+    },
+  },
+});
+```
+
+---
+
+## Implementation Approach
+
+### Strategy: Build Fresh with MUI
+
+Since we're using Material UI, we'll build components from scratch using MUI primitives rather than migrating the MagicPatterns Tailwind code. This approach gives us:
+
+- **Consistent theming** - Built-in light/dark mode with `ThemeProvider`
+- **Better data handling** - MUI X DataGrid for workflow tables
+- **Accessible components** - MUI follows WAI-ARIA standards
+- **Faster development** - Less custom CSS, more pre-built components
+
+### Phase 1: Foundation (MVP Core)
+1. Set up Next.js 15 project with App Router + MUI
+2. Configure MUI theme (light/dark mode)
+3. Build core components (Dashboard, ServerGrid, MetricsCards)
+4. Add Prisma + PostgreSQL database
+5. Implement server CRUD (add/remove/edit)
+6. Connect to n8n API for workflow data
+7. Basic authentication (NextAuth.js with Google/GitHub)
+
+### Phase 2: AI Integration
+1. AI provider abstraction (OpenAI, Claude, Ollama)
+2. Error analysis endpoint with streaming
+3. AI chatbot backend (real responses)
+4. Analysis caching for cost savings
+
+### Phase 3: Real-time & Polish
+1. Webhook receiver for n8n events
+2. Real-time updates (Server-Sent Events or Socket.io)
+3. Dark mode implementation
 4. Docker deployment setup
 
 ---
 
+## Files to Create (MVP)
+
+```
+src/
+├── app/
+│   ├── page.tsx                    # Dashboard (from MagicPatterns)
+│   ├── layout.tsx                  # Root layout with providers
+│   ├── api/
+│   │   ├── servers/route.ts        # Server CRUD
+│   │   ├── n8n/[serverId]/
+│   │   │   ├── workflows/route.ts  # Proxy to n8n
+│   │   │   └── executions/route.ts
+│   │   ├── ai/
+│   │   │   ├── analyze/route.ts    # Error analysis
+│   │   │   └── chat/route.ts       # Chatbot
+│   │   └── auth/[...nextauth]/route.ts
+│   └── (auth)/
+│       └── login/page.tsx
+├── components/                      # Custom components using MUI
+│   ├── AIAnalysisDrawer.tsx        # MUI Drawer
+│   ├── AIChatbot.tsx               # MUI Card + TextField
+│   ├── ServerHealthGrid.tsx        # MUI Card Grid
+│   ├── WorkflowTable.tsx           # MUI X DataGrid
+│   ├── ErrorLogPanel.tsx           # MUI List + ListItem
+│   ├── MetricsCards.tsx            # MUI Card
+│   ├── FilterBar.tsx               # MUI TextField + Select
+│   ├── SettingsDialog.tsx          # MUI Dialog + Tabs
+│   └── theme/                       # MUI theme customization
+│       ├── theme.ts                 # Light/dark theme config
+│       └── ThemeProvider.tsx        # Theme context provider
+├── lib/
+│   ├── n8n-client.ts               # n8n API wrapper
+│   ├── ai/
+│   │   ├── provider.ts             # AI provider abstraction
+│   │   ├── openai.ts
+│   │   ├── anthropic.ts
+│   │   └── ollama.ts
+│   ├── db.ts                       # Prisma client
+│   └── auth.ts                     # NextAuth config
+└── prisma/
+    └── schema.prisma
+```
+
+---
+
+## Docker Deployment
+
+### Dockerfile
+```dockerfile
+# Dockerfile
+FROM node:20-alpine AS base
+
+# Install dependencies only when needed
+FROM base AS deps
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+# Rebuild the source code only when needed
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Build Next.js
+ENV NEXT_TELEMETRY_DISABLED 1
+RUN npm run build
+
+# Production image
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV production
+ENV NEXT_TELEMETRY_DISABLED 1
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/prisma ./prisma
+
+USER nextjs
+
+EXPOSE 3000
+
+ENV PORT 3000
+ENV HOSTNAME "0.0.0.0"
+
+CMD ["node", "server.js"]
+```
+
+### docker-compose.yml
+```yaml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/n8n_dashboard
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=n8n_dashboard
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+```
+
+### Files to Add for Docker
+```
+├── Dockerfile
+├── docker-compose.yml
+├── .dockerignore
+└── next.config.js          # Add: output: 'standalone'
+```
+
+---
+
+## Development Tools & Agents
+
+During implementation, I will leverage:
+
+| Tool/Agent | Purpose |
+|------------|---------|
+| **MCP Playwright** | Visual testing, UI verification, screenshot comparisons |
+| **MCP n8n-debug** | Test n8n API integration, debug workflow connections |
+| **Explore Agent** | Search codebase for patterns, find files |
+| **Plan Agent** | Design complex features before implementation |
+| **Sequential Thinking** | Break down complex problems step-by-step |
+| **Browser Tools** | Debug console errors, network issues |
+
+---
+
 ## Next Steps
-1. ✅ Tech stack defined
-2. ✅ Wireframes created
-3. ⏳ Confirm design direction
-4. Set up project scaffolding
-5. Implement MVP features iteratively
+1. ✅ Tech stack defined (Next.js 15 + Material UI + MUI X)
+2. ✅ Wireframes completed (Dashboard, Dialogs, Settings, Profile)
+3. ✅ MUI component mapping defined
+4. ✅ Theme configuration planned
+5. ✅ Docker deployment configured
+6. ✅ Development tools identified
+7. ⏳ **Ready for implementation**
 

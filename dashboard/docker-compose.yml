@@ -1,17 +1,18 @@
-version: '3.8'
+name: n8n_health_dashboard
 
 services:
   # Main Application
   app:
+    container_name: n8n_health_dashboard
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "3002:3000"
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/n8n_dashboard
-      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3002}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       # OAuth Providers
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
@@ -35,6 +36,7 @@ services:
 
   # PostgreSQL Database
   db:
+    container_name: n8n_health_dashboard_db
     image: postgres:16-alpine
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -53,6 +55,7 @@ services:
 
   # Redis for caching and real-time features
   redis:
+    container_name: n8n_health_dashboard_redis
     image: redis:7-alpine
     command: redis-server --appendonly yes
     volumes:

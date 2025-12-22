@@ -21,9 +21,30 @@ import PersonIcon from '@mui/icons-material/Person';
 import GroupIcon from '@mui/icons-material/Group';
 import LogoutIcon from '@mui/icons-material/Logout';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import DnsIcon from '@mui/icons-material/Dns';
 import { useThemeMode } from '@/components/theme/ThemeProvider';
 
-export function DashboardHeader() {
+interface DashboardHeaderProps {
+  onManageServersClick?: () => void;
+  onSettingsClick?: () => void;
+  onProfileClick?: () => void;
+  onTeamMembersClick?: () => void;
+  onSignOut?: () => void;
+  userName?: string;
+  userInitials?: string;
+  userEmail?: string;
+}
+
+export function DashboardHeader({
+  onManageServersClick,
+  onSettingsClick,
+  onProfileClick,
+  onTeamMembersClick,
+  onSignOut,
+  userName = 'Moni',
+  userInitials = 'MT',
+  userEmail = 'moni@company.com',
+}: DashboardHeaderProps) {
   const { toggleTheme, isDarkMode } = useThemeMode();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
@@ -34,6 +55,11 @@ export function DashboardHeader() {
 
   const handleClose = () => {
     setAnchorEl(null);
+  };
+
+  const handleMenuItemClick = (handler?: () => void) => {
+    handleClose();
+    handler?.();
   };
 
   return (
@@ -95,7 +121,8 @@ export function DashboardHeader() {
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Button
           variant="outlined"
-          startIcon={<SettingsIcon />}
+          startIcon={<DnsIcon />}
+          onClick={onManageServersClick}
           sx={{
             borderColor: 'divider',
             textTransform: 'none',
@@ -163,17 +190,16 @@ export function DashboardHeader() {
               boxShadow: '0 0 10px rgba(59, 130, 246, 0.4)',
             }}
           >
-            MT
+            {userInitials}
           </Avatar>
           <Typography variant="body2" sx={{ fontWeight: 500 }}>
-            Moni
+            {userName}
           </Typography>
         </Button>
         <Menu
           anchorEl={anchorEl}
           open={open}
           onClose={handleClose}
-          onClick={handleClose}
           transformOrigin={{ horizontal: 'right', vertical: 'top' }}
           anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
           slotProps={{
@@ -187,33 +213,33 @@ export function DashboardHeader() {
         >
           <Box sx={{ px: 2, py: 1.5 }}>
             <Typography variant="subtitle2" fontWeight={600}>
-              Moni Tor
+              {userName}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              moni@company.com
+              {userEmail}
             </Typography>
           </Box>
           <Divider />
-          <MenuItem>
+          <MenuItem onClick={() => handleMenuItemClick(onProfileClick)}>
             <ListItemIcon>
               <PersonIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>My Profile</ListItemText>
           </MenuItem>
-          <MenuItem>
+          <MenuItem onClick={() => handleMenuItemClick(onTeamMembersClick)}>
             <ListItemIcon>
               <GroupIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>Team Members</ListItemText>
           </MenuItem>
-          <MenuItem>
+          <MenuItem onClick={() => handleMenuItemClick(onSettingsClick)}>
             <ListItemIcon>
               <SettingsIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>Settings</ListItemText>
           </MenuItem>
           <Divider />
-          <MenuItem>
+          <MenuItem onClick={() => handleMenuItemClick(onSignOut)}>
             <ListItemIcon>
               <LogoutIcon fontSize="small" />
             </ListItemIcon>

@@ -23,6 +23,7 @@ export interface Workflow {
   lastExecution: Date | null;
   executionTime: number; // in milliseconds
   executionCount: number;
+  successRate?: number; // percentage (0-100)
 }
 
 // Error types
@@ -77,4 +78,59 @@ export interface FilterState {
   searchQuery: string;
   serverFilter: string;
   statusFilter: string;
+}
+
+// User types
+export type UserRole = 'admin' | 'member' | 'viewer';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  avatar?: string;
+  provider: 'google' | 'github' | 'email';
+  createdAt: Date;
+}
+
+export interface TeamInvite {
+  id: string;
+  email: string;
+  role: UserRole;
+  invitedAt: Date;
+  invitedBy: string;
+}
+
+// Settings types
+export interface AppSettings {
+  theme: 'light' | 'dark' | 'system';
+  compactMode: boolean;
+  defaultTab: 'overview' | 'workflows' | 'errors';
+  autoRefreshInterval: number;
+  showOfflineServers: boolean;
+  aiProvider: 'openai' | 'anthropic' | 'ollama';
+  aiModel: string;
+  aiCacheEnabled: boolean;
+  notifications: NotificationSettings;
+}
+
+export interface NotificationSettings {
+  emailEnabled: boolean;
+  emailAddress: string;
+  slackEnabled: boolean;
+  slackWebhook: string;
+  discordEnabled: boolean;
+  discordWebhook: string;
+  errorRateThreshold: number;
+  offlineThreshold: number;
+}
+
+// Extended Server type for form
+export interface ServerFormData {
+  name: string;
+  url: string;
+  apiKey: string;
+  pollingInterval: number;
+  webhookEnabled: boolean;
+  skipSslVerification: boolean;
 }

@@ -23,10 +23,13 @@ import ErrorIcon from '@mui/icons-material/Error';
 import PauseCircleIcon from '@mui/icons-material/PauseCircle';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import { Workflow, WorkflowStatus } from '@/types';
 
 interface WorkflowTableProps {
   limit?: number;
+  selectedServerId?: string | null;
 }
 
 // Mock workflow data
@@ -41,6 +44,7 @@ const mockWorkflows: (Workflow & { serverName: string })[] = [
     lastExecution: new Date(Date.now() - 5 * 60 * 1000),
     executionTime: 234,
     executionCount: 1523,
+    successRate: 99.8,
   },
   {
     id: '2',
@@ -52,6 +56,7 @@ const mockWorkflows: (Workflow & { serverName: string })[] = [
     lastExecution: new Date(),
     executionTime: 1250,
     executionCount: 892,
+    successRate: 100,
   },
   {
     id: '3',
@@ -63,6 +68,7 @@ const mockWorkflows: (Workflow & { serverName: string })[] = [
     lastExecution: new Date(Date.now() - 15 * 60 * 1000),
     executionTime: 156,
     executionCount: 4521,
+    successRate: 85.5,
   },
   {
     id: '4',
@@ -74,6 +80,7 @@ const mockWorkflows: (Workflow & { serverName: string })[] = [
     lastExecution: new Date(Date.now() - 30 * 60 * 1000),
     executionTime: 0,
     executionCount: 756,
+    successRate: 0,
   },
   {
     id: '5',
@@ -85,6 +92,7 @@ const mockWorkflows: (Workflow & { serverName: string })[] = [
     lastExecution: new Date(Date.now() - 2 * 60 * 60 * 1000),
     executionTime: 890,
     executionCount: 234,
+    successRate: 95,
   },
   {
     id: '6',
@@ -96,6 +104,7 @@ const mockWorkflows: (Workflow & { serverName: string })[] = [
     lastExecution: new Date(Date.now() - 60 * 60 * 1000),
     executionTime: 3450,
     executionCount: 125,
+    successRate: 98.2,
   },
   {
     id: '7',
@@ -107,6 +116,7 @@ const mockWorkflows: (Workflow & { serverName: string })[] = [
     lastExecution: new Date(Date.now() - 2 * 60 * 1000),
     executionTime: 89,
     executionCount: 8901,
+    successRate: 99.9,
   },
 ];
 
@@ -173,11 +183,16 @@ function formatExecutionTime(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function WorkflowTable({ limit }: WorkflowTableProps) {
+export function WorkflowTable({ limit, selectedServerId }: WorkflowTableProps) {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(limit || 10);
 
-  const workflows = limit ? mockWorkflows.slice(0, limit) : mockWorkflows;
+  // Filter workflows by selected server
+  const filteredWorkflows = selectedServerId
+    ? mockWorkflows.filter(w => w.serverId === selectedServerId)
+    : mockWorkflows;
+
+  const workflows = limit ? filteredWorkflows.slice(0, limit) : filteredWorkflows;
   const showPagination = !limit;
 
   const handleChangePage = (_event: unknown, newPage: number) => {
@@ -189,27 +204,86 @@ export function WorkflowTable({ limit }: WorkflowTableProps) {
     setPage(0);
   };
 
+  // Empty state
+  if (workflows.length === 0) {
+    return (
+      <Card
+        sx={{
+          overflow: 'hidden',
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 3,
+        }}
+      >
+        <Box
+          sx={{
+            textAlign: 'center',
+            py: 8,
+            px: 3,
+            bgcolor: (theme) =>
+              theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.3)' : 'rgba(248, 250, 252, 0.5)',
+          }}
+        >
+          <Box
+            sx={{
+              width: 64,
+              height: 64,
+              bgcolor: (theme) =>
+                theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.8)' : 'rgba(226, 232, 240, 0.8)',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              mx: 'auto',
+              mb: 2,
+            }}
+          >
+            <PlayCircleOutlineIcon sx={{ fontSize: 32, color: 'text.secondary' }} />
+          </Box>
+          <Typography variant="body1" color="text.secondary" fontWeight={500}>
+            No workflows found matching your criteria.
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, opacity: 0.7 }}>
+            Try adjusting your filters or search query.
+          </Typography>
+        </Box>
+      </Card>
+    );
+  }
+
   return (
     <Card
       sx={{
         overflow: 'hidden',
+        border: 1,
+        borderColor: 'divider',
+        borderRadius: 3,
+        bgcolor: (theme) =>
+          theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.5)' : 'background.paper',
       }}
     >
       <TableContainer>
         <Table size="small">
           <TableHead>
-            <TableRow>
-              <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>WORKFLOW</TableCell>
-              <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>SERVER</TableCell>
-              <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>STATUS</TableCell>
-              <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>LAST RUN</TableCell>
-              <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>EXEC TIME</TableCell>
-              <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }} align="right">ACTIONS</TableCell>
+            <TableRow
+              sx={{
+                bgcolor: (theme) =>
+                  theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.8)' : 'rgba(248, 250, 252, 0.8)',
+              }}
+            >
+              <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }}>Workflow Name</TableCell>
+              <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }}>Server</TableCell>
+              <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }}>Status</TableCell>
+              <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }}>Last Run</TableCell>
+              <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }} align="right">Duration</TableCell>
+              <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }} align="right">Success Rate</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {workflows.map((workflow) => {
               const status = statusConfig[workflow.status];
+              const successRate = workflow.successRate ?? 0;
+              const isLowSuccessRate = successRate < 90;
               return (
                 <TableRow
                   key={workflow.id}
@@ -217,20 +291,33 @@ export function WorkflowTable({ limit }: WorkflowTableProps) {
                   sx={{
                     cursor: 'pointer',
                     '&:last-child td, &:last-child th': { border: 0 },
+                    transition: 'background-color 0.2s',
+                    '&:hover': {
+                      bgcolor: (theme) =>
+                        theme.palette.mode === 'dark' ? 'rgba(71, 85, 105, 0.3)' : 'rgba(241, 245, 249, 0.8)',
+                    },
+                    '&:hover .workflow-name': {
+                      color: 'primary.main',
+                    },
                   }}
                 >
                   <TableCell>
                     <Box>
-                      <Typography variant="body2" fontWeight={600}>
+                      <Typography
+                        variant="body2"
+                        fontWeight={500}
+                        className="workflow-name"
+                        sx={{ transition: 'color 0.2s' }}
+                      >
                         {workflow.name}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary" fontFamily="monospace">
+                      <Typography variant="caption" color="text.secondary" fontFamily="monospace" sx={{ fontSize: '0.7rem' }}>
                         {workflow.n8nId}
                       </Typography>
                     </Box>
                   </TableCell>
                   <TableCell>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="body2" color="text.secondary" fontSize="0.875rem">
                       {workflow.serverName}
                     </Typography>
                   </TableCell>
@@ -254,25 +341,52 @@ export function WorkflowTable({ limit }: WorkflowTableProps) {
                     />
                   </TableCell>
                   <TableCell>
-                    <Typography variant="body2" fontFamily="monospace" color="text.secondary">
+                    <Typography variant="body2" fontFamily="monospace" color="text.secondary" fontSize="0.875rem">
                       {formatTimeAgo(workflow.lastExecution)}
                     </Typography>
                   </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" fontFamily="monospace">
-                      {formatExecutionTime(workflow.executionTime)}
-                    </Typography>
+                  <TableCell align="right">
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                      <AccessTimeIcon sx={{ fontSize: 14, color: 'text.secondary', opacity: 0.6 }} />
+                      <Typography variant="body2" fontFamily="monospace" color="text.secondary" fontSize="0.875rem">
+                        {formatExecutionTime(workflow.executionTime)}
+                      </Typography>
+                    </Box>
                   </TableCell>
                   <TableCell align="right">
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
-                      <Tooltip title="Open in n8n">
-                        <IconButton size="small">
-                          <OpenInNewIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </Tooltip>
-                      <IconButton size="small">
-                        <MoreVertIcon sx={{ fontSize: 16 }} />
-                      </IconButton>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1.5 }}>
+                      <Typography
+                        variant="body2"
+                        fontFamily="monospace"
+                        fontWeight={500}
+                        sx={{
+                          color: isLowSuccessRate ? '#ef4444' : '#10b981',
+                        }}
+                      >
+                        {successRate}%
+                      </Typography>
+                      <Box
+                        sx={{
+                          width: 80,
+                          height: 6,
+                          bgcolor: (theme) =>
+                            theme.palette.mode === 'dark' ? 'rgba(71, 85, 105, 0.5)' : 'rgba(226, 232, 240, 0.8)',
+                          borderRadius: 3,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: `${successRate}%`,
+                            height: '100%',
+                            borderRadius: 3,
+                            background: isLowSuccessRate
+                              ? 'linear-gradient(to right, #dc2626, #ef4444)'
+                              : 'linear-gradient(to right, #059669, #10b981)',
+                            transition: 'width 0.5s ease',
+                          }}
+                        />
+                      </Box>
                     </Box>
                   </TableCell>
                 </TableRow>
@@ -286,7 +400,7 @@ export function WorkflowTable({ limit }: WorkflowTableProps) {
         <TablePagination
           rowsPerPageOptions={[5, 10, 25]}
           component="div"
-          count={mockWorkflows.length}
+          count={filteredWorkflows.length}
           rowsPerPage={rowsPerPage}
           page={page}
           onPageChange={handleChangePage}
