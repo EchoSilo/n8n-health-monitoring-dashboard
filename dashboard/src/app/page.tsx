@@ -52,7 +52,7 @@ const mockCurrentUser: User = {
 const mockTeamMembers: User[] = [
   mockCurrentUser,
   { id: '2', name: 'Sarah Kim', email: 'sarah@company.com', role: 'member', provider: 'github', createdAt: new Date('2024-02-01') },
-  { id: '3', name: 'Mike Johnson', email: 'mike@company.com', role: 'viewer', provider: 'email', createdAt: new Date('2024-03-10') },
+  { id: '3', name: 'Mike Johnson', email: 'mike@company.com', role: 'member', provider: 'email', createdAt: new Date('2024-03-10') },
 ];
 
 const mockInvites: TeamInvite[] = [

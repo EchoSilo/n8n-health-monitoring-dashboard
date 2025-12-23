@@ -12,6 +12,7 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@auth/prisma-adapter": "^2.11.1",
     "@emotion/cache": "^11.14.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
@@ -22,6 +23,7 @@
     "@mui/x-data-grid": "^7.23.0",
     "@prisma/client": "^6.1.0",
     "@tanstack/react-query": "^5.62.0",
+    "bcryptjs": "^3.0.3",
     "next": "^15.1.0",
     "next-auth": "^4.24.0",
     "react": "^19.0.0",
@@ -29,6 +31,7 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

@@ -1,0 +1,109 @@
+import { NextRequest } from 'next/server';
+import { prisma } from '@/lib/db';
+import { z } from 'zod';
+import { requireScope, success, badRequest } from '@/lib/auth-helpers';
+
+const querySchema = z.object({
+  serverId: z.string().optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'RUNNING', 'FAILED']).optional(),
+  search: z.string().optional(),
+  limit: z.coerce.number().min(1).max(100).default(50),
+  offset: z.coerce.number().min(0).default(0),
+});
+
+// GET /api/workflows - List workflows with optional filters
+export async function GET(req: NextRequest) {
+  const { user, error } = await requireScope(req, 'READ_WORKFLOWS');
+  if (error) return error;
+
+  const searchParams = Object.fromEntries(req.nextUrl.searchParams);
+  const result = querySchema.safeParse(searchParams);
+
+  if (!result.success) {
+    return badRequest('Invalid query parameters');
+  }
+
+  const { serverId, status, search, limit, offset } = result.data;
+
+  const where: Record<string, unknown> = {};
+
+  if (serverId) {
+    where.serverId = serverId;
+  }
+
+  if (status) {
+    where.status = status;
+  }
+
+  if (search) {
+    where.name = {
+      contains: search,
+      mode: 'insensitive',
+    };
+  }
+
+  const [workflows, total] = await Promise.all([
+    prisma.workflow.findMany({
+      where,
+      select: {
+        id: true,
+        n8nId: true,
+        name: true,
+        active: true,
+        status: true,
+        lastExecution: true,
+        executionCount: true,
+        avgExecTime: true,
+        serverId: true,
+        createdAt: true,
+        updatedAt: true,
+        server: {
+          select: {
+            id: true,
+            name: true,
+            url: true,
+          },
+        },
+        _count: {
+          select: {
+            executions: true,
+            errors: {
+              where: { resolved: false },
+            },
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+      skip: offset,
+    }),
+    prisma.workflow.count({ where }),
+  ]);
+
+  const transformedWorkflows = workflows.map((w) => ({
+    id: w.id,
+    n8nId: w.n8nId,
+    name: w.name,
+    active: w.active,
+    status: w.status.toLowerCase(),
+    lastExecution: w.lastExecution,
+    executionCount: w.executionCount,
+    avgExecTime: w.avgExecTime,
+    serverId: w.serverId,
+    serverName: w.server.name,
+    createdAt: w.createdAt,
+    updatedAt: w.updatedAt,
+    totalExecutions: w._count.executions,
+    unresolvedErrors: w._count.errors,
+  }));
+
+  return success({
+    workflows: transformedWorkflows,
+    pagination: {
+      total,
+      limit,
+      offset,
+      hasMore: offset + limit < total,
+    },
+  });
+}

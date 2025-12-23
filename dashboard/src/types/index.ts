@@ -80,8 +80,8 @@ export interface FilterState {
   statusFilter: string;
 }
 
-// User types
-export type UserRole = 'admin' | 'member' | 'viewer';
+// User types (matches Prisma UserRole enum)
+export type UserRole = 'admin' | 'member';
 
 export interface User {
   id: string;

@@ -41,7 +41,29 @@ enum ErrorSeverity {
 enum UserRole {
   ADMIN
   MEMBER
-  VIEWER
+}
+
+enum InviteType {
+  EMAIL // Sent to specific email
+  CODE  // Shareable code anyone can use
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum ApiKeyScope {
+  READ_SERVERS
+  WRITE_SERVERS
+  READ_WORKFLOWS
+  WRITE_WORKFLOWS
+  READ_ERRORS
+  WRITE_ERRORS
+  AI_ANALYSIS
+  ADMIN
 }
 
 // Models
@@ -52,8 +74,18 @@ model User {
   emailVerified DateTime?
   image         String?
   role          UserRole  @default(MEMBER)
+  passwordHash  String?   // bcrypt hash for email/password auth (null for OAuth-only)
+
+  // NextAuth relations
   accounts      Account[]
   sessions      Session[]
+
+  // App relations
+  apiKeys        ApiKey[]
+  invitesSent    Invite[]   @relation("InviteSender")
+  createdServers Server[]   @relation("ServerCreator")
+  resolvedErrors ErrorLog[] @relation("ErrorResolver")
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -97,12 +129,18 @@ model Server {
   id              String       @id @default(cuid())
   name            String
   url             String
-  apiKey          String       @db.Text // Encrypted
+  apiKey          String       @db.Text // Encrypted with AES-256-GCM
+  apiKeyIv        String?      // IV for encryption
   status          ServerStatus @default(UNKNOWN)
   lastChecked     DateTime?
   pollingInterval Int          @default(30) // in seconds
   enableWebhook   Boolean      @default(false)
   skipSSL         Boolean      @default(false)
+
+  // Track who created
+  createdById     String?
+  createdBy       User?        @relation("ServerCreator", fields: [createdById], references: [id])
+
   workflows       Workflow[]
   errors          ErrorLog[]
   createdAt       DateTime     @default(now())
@@ -165,7 +203,11 @@ model ErrorLog {
   nodeName    String?
   resolved    Boolean       @default(false)
   resolvedAt  DateTime?
-  resolvedBy  String? // user ID
+
+  // Proper relation for who resolved this error
+  resolvedById   String?
+  resolvedByUser User?     @relation("ErrorResolver", fields: [resolvedById], references: [id])
+
   aiAnalysis  AIAnalysis?
   timestamp   DateTime      @default(now())
   createdAt   DateTime      @default(now())
@@ -213,4 +255,66 @@ model WebhookEvent {
   @@index([serverId])
   @@index([processed])
   @@index([createdAt])
+}
+
+// Invitation system for onboarding users
+model Invite {
+  id         String       @id @default(cuid())
+  type       InviteType
+  email      String?      // For EMAIL type only
+  code       String?      @unique // For CODE type, e.g., "N8H-ABC123"
+  token      String       @unique @default(cuid()) // For email verification link
+  role       UserRole     @default(MEMBER)
+  status     InviteStatus @default(PENDING)
+  maxUses    Int?         // For CODE type: null = unlimited
+  useCount   Int          @default(0)
+  expiresAt  DateTime?    // null = never expires
+
+  // Who created the invite
+  invitedById String
+  invitedBy   User   @relation("InviteSender", fields: [invitedById], references: [id])
+
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([email])
+  @@index([code])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+// API keys for programmatic access
+model ApiKey {
+  id         String        @id @default(cuid())
+  name       String        // User-provided name, e.g., "CI/CD Pipeline"
+  keyPrefix  String        // First 8 chars for display: "n8h_abc1..."
+  keyHash    String        @unique // SHA-256 hash of full key
+  userId     String
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scopes     ApiKeyScope[] // Empty = all scopes user has access to
+  lastUsedAt DateTime?
+  usageCount Int           @default(0)
+  expiresAt  DateTime?     // null = never expires
+  isActive   Boolean       @default(true)
+  revokedAt  DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([keyPrefix])
+  @@index([isActive])
+}
+
+// Password reset tokens
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  email     String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@index([expiresAt])
 }

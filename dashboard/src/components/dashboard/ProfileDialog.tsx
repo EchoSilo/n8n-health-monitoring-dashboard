@@ -96,8 +96,6 @@ export function ProfileDialog({
         return 'error';
       case 'member':
         return 'primary';
-      case 'viewer':
-        return 'default';
       default:
         return 'default';
     }

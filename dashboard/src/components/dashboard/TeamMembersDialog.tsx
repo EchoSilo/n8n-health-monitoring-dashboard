@@ -140,8 +140,6 @@ export function TeamMembersDialog({
         return 'error';
       case 'member':
         return 'primary';
-      case 'viewer':
-        return 'default';
       default:
         return 'default';
     }
@@ -256,7 +254,6 @@ export function TeamMembersDialog({
                 >
                   <MenuItem value="admin">Admin</MenuItem>
                   <MenuItem value="member">Member</MenuItem>
-                  <MenuItem value="viewer">Viewer</MenuItem>
                 </Select>
               </FormControl>
             </Box>
@@ -393,10 +390,6 @@ export function TeamMembersDialog({
           <MenuItem onClick={() => handleRoleChange('member')}>
             <Chip label="Member" size="small" color="primary" sx={{ mr: 1 }} />
             View all, manage servers
-          </MenuItem>
-          <MenuItem onClick={() => handleRoleChange('viewer')}>
-            <Chip label="Viewer" size="small" sx={{ mr: 1 }} />
-            View only
           </MenuItem>
         </Menu>
 
