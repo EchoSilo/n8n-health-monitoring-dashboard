@@ -1,0 +1,160 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+export interface ApiServer {
+  id: string;
+  name: string;
+  url: string;
+  status: 'online' | 'offline' | 'degraded' | 'unknown';
+  lastChecked: string | null;
+  pollingInterval: number;
+  enableWebhook: boolean;
+  skipSSL: boolean;
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  workflowCount: number;
+  errorCount: number;
+}
+
+interface CreateServerData {
+  name: string;
+  url: string;
+  apiKey: string;
+  pollingInterval?: number;
+  enableWebhook?: boolean;
+  skipSSL?: boolean;
+}
+
+interface UpdateServerData {
+  name?: string;
+  url?: string;
+  apiKey?: string;
+  pollingInterval?: number;
+  enableWebhook?: boolean;
+  skipSSL?: boolean;
+}
+
+interface TestConnectionResult {
+  success: boolean;
+  message: string;
+  workflowCount?: number;
+  latency: number;
+  status: string;
+}
+
+interface SyncResult {
+  message: string;
+  stats: {
+    total: number;
+    created: number;
+    updated: number;
+    deactivated: number;
+  };
+}
+
+async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'API request failed');
+  }
+
+  return data.data;
+}
+
+export function useServers() {
+  return useQuery({
+    queryKey: ['servers'],
+    queryFn: () => fetchApi<ApiServer[]>('/api/servers'),
+  });
+}
+
+export function useServer(id: string) {
+  return useQuery({
+    queryKey: ['servers', id],
+    queryFn: () => fetchApi<ApiServer>(`/api/servers/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useCreateServer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: CreateServerData) =>
+      fetchApi<ApiServer>('/api/servers', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['servers'] });
+    },
+  });
+}
+
+export function useUpdateServer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateServerData }) =>
+      fetchApi<ApiServer>(`/api/servers/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['servers'] });
+      queryClient.invalidateQueries({ queryKey: ['servers', id] });
+    },
+  });
+}
+
+export function useDeleteServer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      fetchApi<{ message: string }>(`/api/servers/${id}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['servers'] });
+    },
+  });
+}
+
+export function useTestServerConnection() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      fetchApi<TestConnectionResult>(`/api/servers/${id}/test`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['servers'] });
+    },
+  });
+}
+
+export function useSyncServer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) =>
+      fetchApi<SyncResult>(`/api/servers/${id}/sync`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['servers'] });
+      queryClient.invalidateQueries({ queryKey: ['workflows'] });
+    },
+  });
+}

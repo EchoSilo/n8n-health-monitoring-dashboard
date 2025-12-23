@@ -13,6 +13,8 @@ import {
   Drawer,
   IconButton,
   Divider,
+  CircularProgress,
+  Alert,
 } from '@mui/material';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import ErrorIcon from '@mui/icons-material/Error';
@@ -25,14 +27,46 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ReportProblemIcon from '@mui/icons-material/ReportProblem';
 import { ErrorLog, ErrorSeverity, AIAnalysis } from '@/types';
+import { useErrors, useResolveError, ApiErrorLog } from '@/hooks/api';
+
+// Extended error type for display
+interface DisplayError {
+  id: string;
+  workflowId: string;
+  workflowName: string;
+  serverId: string;
+  serverName: string;
+  message: string;
+  severity: ErrorSeverity;
+  timestamp: Date;
+  stackTrace?: string;
+  hasAIAnalysis: boolean;
+}
 
 interface ErrorLogPanelProps {
   limit?: number;
   selectedServerId?: string | null;
+  errors?: DisplayError[]; // Optional: pass mock data for demo mode
+  useMockData?: boolean; // Force mock data mode
 }
 
-// Mock error data
-const mockErrors: (ErrorLog & { workflowName: string; serverName: string })[] = [
+// Transform API error to display format
+function transformApiError(e: ApiErrorLog): DisplayError {
+  return {
+    id: e.id,
+    workflowId: e.workflow.id,
+    workflowName: e.workflow.name,
+    serverId: e.server.id,
+    serverName: e.server.name,
+    message: e.message,
+    severity: e.severity,
+    timestamp: new Date(e.timestamp),
+    hasAIAnalysis: e.hasAiAnalysis,
+  };
+}
+
+// Mock error data for demo mode
+const mockErrors: DisplayError[] = [
   {
     id: 'err-001',
     workflowId: 'wf-004',
@@ -172,18 +206,38 @@ function formatTimeAgo(date: Date): string {
   return `${days}d ago`;
 }
 
-export function ErrorLogPanel({ limit, selectedServerId }: ErrorLogPanelProps) {
-  const [selectedError, setSelectedError] = useState<typeof mockErrors[0] | null>(null);
+export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, useMockData = true }: ErrorLogPanelProps) {
+  const [selectedError, setSelectedError] = useState<DisplayError | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Filter errors by selected server
-  const filteredErrors = selectedServerId
-    ? mockErrors.filter(e => e.serverId === selectedServerId)
-    : mockErrors;
+  // Fetch from API if not using mock data
+  const { data: apiData, isLoading, error: fetchError } = useErrors(
+    useMockData ? undefined : { serverId: selectedServerId || undefined, limit: limit || 50, resolved: false }
+  );
 
-  const errors = limit ? filteredErrors.slice(0, limit) : filteredErrors;
+  // Resolve error mutation
+  const resolveError = useResolveError();
 
-  const handleErrorClick = (error: typeof mockErrors[0]) => {
+  // Determine which data to use
+  let displayErrors: DisplayError[];
+  if (propErrors) {
+    displayErrors = propErrors;
+  } else if (useMockData) {
+    displayErrors = mockErrors;
+  } else if (apiData?.errors) {
+    displayErrors = apiData.errors.map(transformApiError);
+  } else {
+    displayErrors = [];
+  }
+
+  // Filter errors by selected server (for mock data mode)
+  const filteredErrors = selectedServerId && useMockData
+    ? displayErrors.filter(e => e.serverId === selectedServerId)
+    : displayErrors;
+
+  const errors = limit && useMockData ? filteredErrors.slice(0, limit) : filteredErrors;
+
+  const handleErrorClick = (error: DisplayError) => {
     setSelectedError(error);
     setDrawerOpen(true);
   };
@@ -191,6 +245,34 @@ export function ErrorLogPanel({ limit, selectedServerId }: ErrorLogPanelProps) {
   const handleCloseDrawer = () => {
     setDrawerOpen(false);
   };
+
+  const handleMarkResolved = async () => {
+    if (selectedError && !useMockData) {
+      await resolveError.mutateAsync({ id: selectedError.id, resolved: true });
+      setDrawerOpen(false);
+    }
+  };
+
+  // Loading state
+  if (!useMockData && isLoading) {
+    return (
+      <Card sx={{ p: 4, textAlign: 'center', border: 1, borderColor: 'divider', borderRadius: 3 }}>
+        <CircularProgress size={32} />
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          Loading errors...
+        </Typography>
+      </Card>
+    );
+  }
+
+  // Error state
+  if (!useMockData && fetchError) {
+    return (
+      <Alert severity="error" sx={{ borderRadius: 3 }}>
+        Failed to load errors: {fetchError.message}
+      </Alert>
+    );
+  }
 
   // Empty state
   if (errors.length === 0) {
@@ -652,8 +734,13 @@ export function ErrorLogPanel({ limit, selectedServerId }: ErrorLogPanelProps) {
               <Button variant="outlined" startIcon={<OpenInNewIcon />}>
                 Open in n8n
               </Button>
-              <Button variant="contained" startIcon={<CheckCircleIcon />}>
-                Mark Resolved
+              <Button
+                variant="contained"
+                startIcon={resolveError.isPending ? <CircularProgress size={16} color="inherit" /> : <CheckCircleIcon />}
+                onClick={handleMarkResolved}
+                disabled={resolveError.isPending}
+              >
+                {resolveError.isPending ? 'Resolving...' : 'Mark Resolved'}
               </Button>
             </Box>
           </Box>

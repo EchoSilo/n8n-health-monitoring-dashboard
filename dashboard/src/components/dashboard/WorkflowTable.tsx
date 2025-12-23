@@ -16,6 +16,8 @@ import {
   Button,
   IconButton,
   Tooltip,
+  CircularProgress,
+  Alert,
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -26,14 +28,31 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import { Workflow, WorkflowStatus } from '@/types';
+import { useWorkflows, ApiWorkflow } from '@/hooks/api';
+
+// Extended workflow type for display
+interface DisplayWorkflow {
+  id: string;
+  n8nId: string;
+  name: string;
+  serverId: string;
+  serverName: string;
+  status: WorkflowStatus;
+  lastExecution: Date | null;
+  executionTime: number;
+  executionCount: number;
+  successRate?: number;
+}
 
 interface WorkflowTableProps {
   limit?: number;
   selectedServerId?: string | null;
+  workflows?: DisplayWorkflow[]; // Optional: pass mock data for demo mode
+  useMockData?: boolean; // Force mock data mode
 }
 
-// Mock workflow data
-const mockWorkflows: (Workflow & { serverName: string })[] = [
+// Mock workflow data for demo mode
+const mockWorkflows: DisplayWorkflow[] = [
   {
     id: '1',
     n8nId: 'wf-001',
@@ -120,6 +139,24 @@ const mockWorkflows: (Workflow & { serverName: string })[] = [
   },
 ];
 
+// Transform API workflow to display format
+function transformApiWorkflow(w: ApiWorkflow): DisplayWorkflow {
+  return {
+    id: w.id,
+    n8nId: w.n8nId,
+    name: w.name,
+    serverId: w.serverId,
+    serverName: w.serverName,
+    status: w.status,
+    lastExecution: w.lastExecution ? new Date(w.lastExecution) : null,
+    executionTime: w.avgExecTime,
+    executionCount: w.executionCount,
+    successRate: w.totalExecutions > 0
+      ? ((w.totalExecutions - w.unresolvedErrors) / w.totalExecutions) * 100
+      : undefined,
+  };
+}
+
 const statusConfig: Record<
   WorkflowStatus,
   {
@@ -183,17 +220,55 @@ function formatExecutionTime(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function WorkflowTable({ limit, selectedServerId }: WorkflowTableProps) {
+export function WorkflowTable({ limit, selectedServerId, workflows: propWorkflows, useMockData = true }: WorkflowTableProps) {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(limit || 10);
 
-  // Filter workflows by selected server
-  const filteredWorkflows = selectedServerId
-    ? mockWorkflows.filter(w => w.serverId === selectedServerId)
-    : mockWorkflows;
+  // Fetch from API if not using mock data
+  const { data: apiData, isLoading, error } = useWorkflows(
+    useMockData ? undefined : { serverId: selectedServerId || undefined, limit: limit || 50 }
+  );
 
-  const workflows = limit ? filteredWorkflows.slice(0, limit) : filteredWorkflows;
+  // Determine which data to use
+  let displayWorkflows: DisplayWorkflow[];
+  if (propWorkflows) {
+    displayWorkflows = propWorkflows;
+  } else if (useMockData) {
+    displayWorkflows = mockWorkflows;
+  } else if (apiData?.workflows) {
+    displayWorkflows = apiData.workflows.map(transformApiWorkflow);
+  } else {
+    displayWorkflows = [];
+  }
+
+  // Filter workflows by selected server (for mock data mode)
+  const filteredWorkflows = selectedServerId && useMockData
+    ? displayWorkflows.filter(w => w.serverId === selectedServerId)
+    : displayWorkflows;
+
+  const workflows = limit && useMockData ? filteredWorkflows.slice(0, limit) : filteredWorkflows;
   const showPagination = !limit;
+
+  // Loading state
+  if (!useMockData && isLoading) {
+    return (
+      <Card sx={{ p: 4, textAlign: 'center', border: 1, borderColor: 'divider', borderRadius: 3 }}>
+        <CircularProgress size={32} />
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          Loading workflows...
+        </Typography>
+      </Card>
+    );
+  }
+
+  // Error state
+  if (!useMockData && error) {
+    return (
+      <Alert severity="error" sx={{ borderRadius: 3 }}>
+        Failed to load workflows: {error.message}
+      </Alert>
+    );
+  }
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
