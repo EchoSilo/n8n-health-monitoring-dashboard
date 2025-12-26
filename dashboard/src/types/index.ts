@@ -1,5 +1,5 @@
 // Server types
-export type ServerStatus = 'online' | 'offline' | 'degraded';
+export type ServerStatus = 'online' | 'offline' | 'degraded' | 'unknown';
 
 export interface Server {
   id: string;
@@ -93,12 +93,16 @@ export interface User {
   createdAt: Date;
 }
 
+export type InviteStatus = 'pending' | 'accepted' | 'expired' | 'revoked';
+
 export interface TeamInvite {
   id: string;
   email: string;
   role: UserRole;
+  status: InviteStatus;
   invitedAt: Date;
   invitedBy: string;
+  expiresAt: Date;
 }
 
 // Settings types

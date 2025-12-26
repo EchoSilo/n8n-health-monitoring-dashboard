@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useSession, signOut } from 'next-auth/react';
 import {
   Box,
   Container,
   Tabs,
   Tab,
   Typography,
+  CircularProgress,
 } from '@mui/material';
 import GridViewIcon from '@mui/icons-material/GridView';
 import ListAltIcon from '@mui/icons-material/ListAlt';
@@ -25,39 +27,11 @@ import { ProfileDialog } from '@/components/dashboard/ProfileDialog';
 import { TeamMembersDialog } from '@/components/dashboard/TeamMembersDialog';
 import { Server, ServerFormData, User, TeamInvite, AppSettings } from '@/types';
 
-// Mock data for initial development
-const initialServers: Server[] = [
-  { id: '1', name: 'Production-US', url: 'https://n8n.us.company.com', status: 'online', workflowCount: 156, errorCount: 2, lastPing: 32 },
-  { id: '2', name: 'Production-EU', url: 'https://n8n.eu.company.com', status: 'online', workflowCount: 203, errorCount: 0, lastPing: 45 },
-  { id: '3', name: 'Staging', url: 'https://n8n.staging.company.com', status: 'offline', workflowCount: 45, errorCount: 0, lastPing: 0 },
-  { id: '4', name: 'Client-A', url: 'https://n8n.client-a.com', status: 'degraded', workflowCount: 89, errorCount: 3, lastPing: 120 },
-];
-
-const mockMetrics = {
-  totalWorkflows: 493,
-  activeExecutions: 12,
-  errorRate: 4.2,
-  avgExecutionTime: 234,
-};
-
-const mockCurrentUser: User = {
-  id: '1',
-  name: 'Jamal Ahmed',
-  email: 'jamal@company.com',
-  role: 'admin',
-  provider: 'google',
-  createdAt: new Date('2024-01-15'),
-};
-
-const mockTeamMembers: User[] = [
-  mockCurrentUser,
-  { id: '2', name: 'Sarah Kim', email: 'sarah@company.com', role: 'member', provider: 'github', createdAt: new Date('2024-02-01') },
-  { id: '3', name: 'Mike Johnson', email: 'mike@company.com', role: 'member', provider: 'email', createdAt: new Date('2024-03-10') },
-];
-
-const mockInvites: TeamInvite[] = [
-  { id: 'inv-1', email: 'alex@company.com', role: 'member', invitedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), invitedBy: '1' },
-];
+// API hooks
+import { useServers, useCreateServer, useUpdateServer, useDeleteServer } from '@/hooks/api/use-servers';
+import { useCurrentUser, useUsers, useUpdateProfile, useDeleteUser, useUpdateUser } from '@/hooks/api/use-users';
+import { useInvites, useCreateInvite, useRevokeInvite } from '@/hooks/api/use-invites';
+import { useRunningExecutions, useRecentExecutions } from '@/hooks/api/use-executions';
 
 const defaultSettings: AppSettings = {
   theme: 'system',
@@ -100,6 +74,26 @@ function TabPanel({ children, value, index }: TabPanelProps) {
 }
 
 export default function DashboardPage() {
+  const { data: session, status } = useSession();
+
+  // API data hooks
+  const { data: apiCurrentUser, isLoading: userLoading } = useCurrentUser();
+  const { data: apiServers, isLoading: serversLoading } = useServers();
+  const { data: apiUsers, isLoading: usersLoading } = useUsers();
+  const { data: apiInvites, isLoading: invitesLoading } = useInvites();
+  const { data: runningExecutionsData } = useRunningExecutions();
+  const { data: recentExecutionsData } = useRecentExecutions(100);
+
+  // API mutation hooks
+  const createServerMutation = useCreateServer();
+  const updateServerMutation = useUpdateServer();
+  const deleteServerMutation = useDeleteServer();
+  const updateProfileMutation = useUpdateProfile();
+  const updateUserMutation = useUpdateUser();
+  const deleteUserMutation = useDeleteUser();
+  const createInviteMutation = useCreateInvite();
+  const revokeInviteMutation = useRevokeInvite();
+
   const [tabValue, setTabValue] = useState(0);
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -112,105 +106,235 @@ export default function DashboardPage() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [teamMembersOpen, setTeamMembersOpen] = useState(false);
 
-  // Data states
-  const [servers, setServers] = useState<Server[]>(initialServers);
-  const [currentUser, setCurrentUser] = useState<User>(mockCurrentUser);
-  const [teamMembers, setTeamMembers] = useState<User[]>(mockTeamMembers);
-  const [invites, setInvites] = useState<TeamInvite[]>(mockInvites);
+  // Local settings state (not yet persisted to API)
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+
+  // Transform API data to component types
+  const currentUser: User = useMemo(() => {
+    if (apiCurrentUser) {
+      return {
+        id: apiCurrentUser.id,
+        name: apiCurrentUser.name || 'Unknown',
+        email: apiCurrentUser.email,
+        role: (apiCurrentUser.role || 'member') as 'admin' | 'member',
+        provider: 'email' as const,
+        createdAt: new Date(apiCurrentUser.createdAt),
+      };
+    }
+    // Fallback to session data
+    if (session?.user) {
+      return {
+        id: session.user.id || '1',
+        name: session.user.name || 'User',
+        email: session.user.email || '',
+        role: (session.user.role as 'admin' | 'member') || 'member',
+        provider: 'email' as const,
+        createdAt: new Date(),
+      };
+    }
+    return {
+      id: '1',
+      name: 'User',
+      email: '',
+      role: 'member' as const,
+      provider: 'email' as const,
+      createdAt: new Date(),
+    };
+  }, [apiCurrentUser, session]);
+
+  const servers: Server[] = useMemo(() => {
+    if (apiServers) {
+      return apiServers.map(s => ({
+        id: s.id,
+        name: s.name,
+        url: s.url,
+        status: s.status,
+        workflowCount: s.workflowCount || 0,
+        errorCount: s.errorCount || 0,
+        lastPing: s.lastChecked ? Math.floor((Date.now() - new Date(s.lastChecked).getTime()) / 1000) : 0,
+      }));
+    }
+    return [];
+  }, [apiServers]);
+
+  const teamMembers: User[] = useMemo(() => {
+    if (apiUsers) {
+      return apiUsers.map(u => ({
+        id: u.id,
+        name: u.name || 'Unknown',
+        email: u.email,
+        role: u.role as 'admin' | 'member',
+        provider: 'email' as const,
+        createdAt: new Date(u.createdAt),
+      }));
+    }
+    return [currentUser];
+  }, [apiUsers, currentUser]);
+
+  const invites: TeamInvite[] = useMemo(() => {
+    if (apiInvites) {
+      return apiInvites.map(inv => ({
+        id: inv.id,
+        email: inv.email || '',
+        role: inv.role as 'admin' | 'member',
+        status: inv.status as 'pending' | 'accepted' | 'expired',
+        invitedAt: new Date(inv.createdAt),
+        invitedBy: inv.invitedBy.id,
+        expiresAt: inv.expiresAt ? new Date(inv.expiresAt) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      }));
+    }
+    return [];
+  }, [apiInvites]);
+
+  // Compute metrics from real data
+  const metrics = useMemo(() => {
+    const totalWorkflows = servers.reduce((sum, s) => sum + s.workflowCount, 0);
+    const totalErrors = servers.reduce((sum, s) => sum + s.errorCount, 0);
+    const errorRate = totalWorkflows > 0 ? (totalErrors / totalWorkflows) * 100 : 0;
+
+    // Get active executions count from running executions
+    const activeExecutions = runningExecutionsData?.executions?.length ?? 0;
+
+    // Calculate average execution time from recent executions
+    const recentExecutions = recentExecutionsData?.executions ?? [];
+    const executionsWithDuration = recentExecutions.filter(e => e.duration !== null && e.duration > 0);
+    const avgExecutionTime = executionsWithDuration.length > 0
+      ? Math.round(executionsWithDuration.reduce((sum, e) => sum + (e.duration ?? 0), 0) / executionsWithDuration.length)
+      : 0;
+
+    return {
+      totalWorkflows,
+      activeExecutions,
+      errorRate: Math.round(errorRate * 10) / 10,
+      avgExecutionTime,
+    };
+  }, [servers, runningExecutionsData, recentExecutionsData]);
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
 
   const handleServerClick = (serverId: string) => {
-    // Toggle selection: if same server, deselect; otherwise select
     const newSelection = selectedServerId === serverId ? null : serverId;
     setSelectedServerId(newSelection);
-    // Bidirectional sync: update server filter dropdown
     setServerFilter(newSelection || 'all');
   };
 
-  // Handle server filter dropdown change - sync with card selection
   const handleServerFilterChange = (value: string) => {
     setServerFilter(value);
-    // Sync card selection: if 'all' selected, deselect card; otherwise select matching card
     setSelectedServerId(value === 'all' ? null : value);
   };
 
   const handleRefresh = () => {
-    console.log('Refreshing data...');
+    // Refetch all data
+    window.location.reload();
   };
 
-  // Server handlers
-  const handleAddServer = (data: ServerFormData) => {
-    const newServer: Server = {
-      id: `server-${Date.now()}`,
-      name: data.name,
-      url: data.url,
-      status: 'online',
-      workflowCount: 0,
-      errorCount: 0,
-      lastPing: 0,
-    };
-    setServers(prev => [...prev, newServer]);
-  };
-
-  const handleEditServer = (id: string, data: ServerFormData) => {
-    setServers(prev => prev.map(server =>
-      server.id === id
-        ? { ...server, name: data.name, url: data.url }
-        : server
-    ));
-  };
-
-  const handleDeleteServer = (id: string) => {
-    setServers(prev => prev.filter(server => server.id !== id));
-    if (selectedServerId === id) {
-      setSelectedServerId(null);
+  // Server handlers - use API
+  const handleAddServer = async (data: ServerFormData) => {
+    try {
+      await createServerMutation.mutateAsync({
+        name: data.name,
+        url: data.url,
+        apiKey: data.apiKey || '',
+        pollingInterval: data.pollingInterval,
+      });
+    } catch (error) {
+      console.error('Failed to add server:', error);
     }
   };
 
-  // Profile handlers
-  const handleUpdateProfile = (data: Partial<User>) => {
-    setCurrentUser(prev => ({ ...prev, ...data }));
-    setTeamMembers(prev => prev.map(member =>
-      member.id === currentUser.id ? { ...member, ...data } : member
-    ));
+  const handleEditServer = async (id: string, data: ServerFormData) => {
+    try {
+      await updateServerMutation.mutateAsync({
+        id,
+        data: {
+          name: data.name,
+          url: data.url,
+          apiKey: data.apiKey,
+          pollingInterval: data.pollingInterval,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to update server:', error);
+    }
+  };
+
+  const handleDeleteServer = async (id: string) => {
+    try {
+      await deleteServerMutation.mutateAsync(id);
+      if (selectedServerId === id) {
+        setSelectedServerId(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete server:', error);
+    }
+  };
+
+  // Profile handlers - use API
+  const handleUpdateProfile = async (data: Partial<User>) => {
+    try {
+      await updateProfileMutation.mutateAsync({
+        name: data.name,
+        email: data.email,
+      });
+    } catch (error) {
+      console.error('Failed to update profile:', error);
+    }
   };
 
   const handleConnectProvider = (provider: 'google' | 'github') => {
     console.log('Connecting to', provider);
   };
 
-  const handleDeleteAccount = () => {
-    console.log('Account deletion requested');
+  const handleDeleteAccount = async () => {
+    try {
+      await deleteUserMutation.mutateAsync(currentUser.id);
+      await signOut({ callbackUrl: '/auth/login' });
+    } catch (error) {
+      console.error('Failed to delete account:', error);
+    }
   };
 
-  // Team handlers
-  const handleInviteMember = (email: string, role: User['role']) => {
-    const newInvite: TeamInvite = {
-      id: `inv-${Date.now()}`,
-      email,
-      role,
-      invitedAt: new Date(),
-      invitedBy: currentUser.id,
-    };
-    setInvites(prev => [...prev, newInvite]);
+  // Team handlers - use API
+  const handleInviteMember = async (email: string, role: User['role']) => {
+    try {
+      await createInviteMutation.mutateAsync({
+        type: 'email',
+        email,
+        role: role as 'admin' | 'member',
+        expiresInDays: 7,
+      });
+    } catch (error) {
+      console.error('Failed to invite member:', error);
+    }
   };
 
-  const handleRemoveMember = (userId: string) => {
-    setTeamMembers(prev => prev.filter(member => member.id !== userId));
+  const handleRemoveMember = async (userId: string) => {
+    try {
+      await deleteUserMutation.mutateAsync(userId);
+    } catch (error) {
+      console.error('Failed to remove member:', error);
+    }
   };
 
-  const handleChangeRole = (userId: string, role: User['role']) => {
-    setTeamMembers(prev => prev.map(member =>
-      member.id === userId ? { ...member, role } : member
-    ));
+  const handleChangeRole = async (userId: string, role: User['role']) => {
+    try {
+      await updateUserMutation.mutateAsync({
+        id: userId,
+        data: { role: role as 'admin' | 'member' },
+      });
+    } catch (error) {
+      console.error('Failed to change role:', error);
+    }
   };
 
-  const handleCancelInvite = (inviteId: string) => {
-    setInvites(prev => prev.filter(invite => invite.id !== inviteId));
+  const handleCancelInvite = async (inviteId: string) => {
+    try {
+      await revokeInviteMutation.mutateAsync(inviteId);
+    } catch (error) {
+      console.error('Failed to cancel invite:', error);
+    }
   };
 
   const handleResendInvite = (inviteId: string) => {
@@ -222,15 +346,32 @@ export default function DashboardPage() {
     setSettings(newSettings);
   };
 
-  // Sign out handler
+  // Sign out handler - use NextAuth
   const handleSignOut = () => {
-    console.log('Signing out...');
+    signOut({ callbackUrl: '/auth/login' });
   };
 
   // Get user initials for header
   const getUserInitials = (name: string) => {
     return name.split(' ').map(part => part[0]).join('').toUpperCase().slice(0, 2);
   };
+
+  // Show loading state
+  if (status === 'loading' || userLoading) {
+    return (
+      <Box
+        sx={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          bgcolor: '#0f172a',
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box
@@ -266,7 +407,7 @@ export default function DashboardPage() {
         />
 
         {/* Metrics Cards */}
-        <MetricsCards metrics={mockMetrics} />
+        <MetricsCards metrics={metrics} />
 
         {/* Navigation Tabs */}
         <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 4 }}>
@@ -361,7 +502,14 @@ export default function DashboardPage() {
                 />
                 Active Workflows
               </Typography>
-              <WorkflowTable limit={5} selectedServerId={selectedServerId} />
+              <WorkflowTable
+                limit={5}
+                selectedServerId={selectedServerId}
+                useMockData={false}
+                onViewAll={() => setTabValue(1)}
+                defaultSortBy="lastExecution"
+                defaultSortOrder="desc"
+              />
             </Box>
             <Box>
               <Typography
@@ -385,19 +533,25 @@ export default function DashboardPage() {
                 />
                 Recent Errors
               </Typography>
-              <ErrorLogPanel limit={5} selectedServerId={selectedServerId} />
+              <ErrorLogPanel limit={5} selectedServerId={selectedServerId} useMockData={false} onViewAll={() => setTabValue(2)} />
             </Box>
           </Box>
         </TabPanel>
 
         <TabPanel value={tabValue} index={1}>
           {/* Workflows Tab */}
-          <WorkflowTable selectedServerId={selectedServerId} />
+          <WorkflowTable
+            selectedServerId={selectedServerId}
+            useMockData={false}
+            showSorting={true}
+            defaultSortBy="lastExecution"
+            defaultSortOrder="desc"
+          />
         </TabPanel>
 
         <TabPanel value={tabValue} index={2}>
           {/* Error Logs Tab */}
-          <ErrorLogPanel selectedServerId={selectedServerId} />
+          <ErrorLogPanel selectedServerId={selectedServerId} useMockData={false} />
         </TabPanel>
       </Container>
 
@@ -412,6 +566,7 @@ export default function DashboardPage() {
         onAddServer={handleAddServer}
         onEditServer={handleEditServer}
         onDeleteServer={handleDeleteServer}
+        useMockData={false}
       />
 
       <SettingsModal

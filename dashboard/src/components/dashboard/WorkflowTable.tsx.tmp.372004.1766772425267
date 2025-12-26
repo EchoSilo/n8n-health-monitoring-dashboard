@@ -11,7 +11,6 @@ import {
   TableHead,
   TableRow,
   TablePagination,
-  TableSortLabel,
   Chip,
   Typography,
   Button,
@@ -45,18 +44,12 @@ interface DisplayWorkflow {
   successRate?: number;
 }
 
-type SortField = 'name' | 'lastExecution' | 'executionCount' | 'avgExecTime' | 'status' | 'updatedAt';
-type SortOrder = 'asc' | 'desc';
-
 interface WorkflowTableProps {
   limit?: number;
   selectedServerId?: string | null;
   workflows?: DisplayWorkflow[]; // Optional: pass mock data for demo mode
   useMockData?: boolean; // Force mock data mode
   onViewAll?: () => void; // Callback when "View All" button is clicked
-  defaultSortBy?: SortField; // Default sort field
-  defaultSortOrder?: SortOrder; // Default sort order
-  showSorting?: boolean; // Whether to show sortable headers
 }
 
 // Mock workflow data for demo mode
@@ -228,39 +221,14 @@ function formatExecutionTime(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function WorkflowTable({
-  limit,
-  selectedServerId,
-  workflows: propWorkflows,
-  useMockData = true,
-  onViewAll,
-  defaultSortBy = 'lastExecution',
-  defaultSortOrder = 'desc',
-  showSorting = false,
-}: WorkflowTableProps) {
+export function WorkflowTable({ limit, selectedServerId, workflows: propWorkflows, useMockData = true, onViewAll }: WorkflowTableProps) {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(limit || 10);
-  const [sortBy, setSortBy] = useState<SortField>(defaultSortBy);
-  const [sortOrder, setSortOrder] = useState<SortOrder>(defaultSortOrder);
 
   // Fetch from API if not using mock data
   const { data: apiData, isLoading, error } = useWorkflows(
-    useMockData ? undefined : {
-      serverId: selectedServerId || undefined,
-      limit: limit || 50,
-      sortBy,
-      sortOrder,
-    }
+    useMockData ? undefined : { serverId: selectedServerId || undefined, limit: limit || 50 }
   );
-
-  const handleSort = (field: SortField) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortOrder('desc');
-    }
-  };
 
   // Determine which data to use
   let displayWorkflows: DisplayWorkflow[];
@@ -379,51 +347,11 @@ export function WorkflowTable({
                   theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.8)' : 'rgba(248, 250, 252, 0.8)',
               }}
             >
-              <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }}>
-                {showSorting ? (
-                  <TableSortLabel
-                    active={sortBy === 'name'}
-                    direction={sortBy === 'name' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('name')}
-                  >
-                    Workflow Name
-                  </TableSortLabel>
-                ) : 'Workflow Name'}
-              </TableCell>
+              <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }}>Workflow Name</TableCell>
               <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }}>Server</TableCell>
-              <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }}>
-                {showSorting ? (
-                  <TableSortLabel
-                    active={sortBy === 'status'}
-                    direction={sortBy === 'status' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('status')}
-                  >
-                    Status
-                  </TableSortLabel>
-                ) : 'Status'}
-              </TableCell>
-              <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }}>
-                {showSorting ? (
-                  <TableSortLabel
-                    active={sortBy === 'lastExecution'}
-                    direction={sortBy === 'lastExecution' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('lastExecution')}
-                  >
-                    Last Run
-                  </TableSortLabel>
-                ) : 'Last Run'}
-              </TableCell>
-              <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }} align="right">
-                {showSorting ? (
-                  <TableSortLabel
-                    active={sortBy === 'avgExecTime'}
-                    direction={sortBy === 'avgExecTime' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('avgExecTime')}
-                  >
-                    Duration
-                  </TableSortLabel>
-                ) : 'Duration'}
-              </TableCell>
+              <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }}>Status</TableCell>
+              <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }}>Last Run</TableCell>
+              <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }} align="right">Duration</TableCell>
               <TableCell sx={{ fontWeight: 600, fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'text.secondary' }} align="right">Success Rate</TableCell>
             </TableRow>
           </TableHead>

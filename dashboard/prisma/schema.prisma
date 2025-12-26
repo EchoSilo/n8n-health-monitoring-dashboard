@@ -5,7 +5,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -96,12 +96,12 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -129,7 +129,7 @@ model Server {
   id              String       @id @default(cuid())
   name            String
   url             String
-  apiKey          String       @db.Text // Encrypted with AES-256-GCM
+  apiKey          String       // Encrypted with AES-256-GCM
   apiKeyIv        String?      // IV for encryption
   status          ServerStatus @default(UNKNOWN)
   lastChecked     DateTime?
@@ -196,9 +196,9 @@ model ErrorLog {
   serverId    String
   server      Server        @relation(fields: [serverId], references: [id], onDelete: Cascade)
   executionId String?
-  message     String        @db.Text
+  message     String
   severity    ErrorSeverity @default(WARNING)
-  stackTrace  String?       @db.Text
+  stackTrace  String?
   nodeType    String? // e.g., "n8n-nodes-base.httpRequest"
   nodeName    String?
   resolved    Boolean       @default(false)
@@ -226,7 +226,7 @@ model AIAnalysis {
   provider      String // e.g., "openai", "anthropic", "ollama"
   model         String // e.g., "gpt-4-turbo", "claude-3-opus"
   confidence    Int // percentage 0-100
-  rootCause     String   @db.Text
+  rootCause     String
   suggestedFix  Json // array of strings
   similarIssues Json // array of { id, workflow, resolution }
   rawResponse   Json? // full API response for debugging
@@ -292,7 +292,7 @@ model ApiKey {
   keyHash    String        @unique // SHA-256 hash of full key
   userId     String
   user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  scopes     ApiKeyScope[] // Empty = all scopes user has access to
+  scopes     String        @default("[]") // JSON array of ApiKeyScope values
   lastUsedAt DateTime?
   usageCount Int           @default(0)
   expiresAt  DateTime?     // null = never expires

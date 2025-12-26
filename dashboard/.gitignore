@@ -45,5 +45,11 @@ next-env.d.ts
 # Prisma
 /prisma/migrations/*_migration.sql.bak
 
+# SQLite database (self-hosted default)
+*.db
+*.db-journal
+/prisma/data/
+!/prisma/data/.gitkeep
+
 # Sentry
 .sentryclirc

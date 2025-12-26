@@ -136,7 +136,7 @@ export function createN8nClient(config: N8nClientConfig) {
      */
     async getExecutions(options?: {
       workflowId?: string;
-      status?: N8nExecution['status'];
+      status?: 'success' | 'error' | 'running' | 'waiting';
       limit?: number;
     }): Promise<N8nExecution[]> {
       const params = new URLSearchParams();

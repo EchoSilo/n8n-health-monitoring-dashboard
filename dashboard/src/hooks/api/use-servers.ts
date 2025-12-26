@@ -67,7 +67,7 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
     throw new Error(data.error || 'API request failed');
   }
 
-  return data.data;
+  return data;
 }
 
 export function useServers() {

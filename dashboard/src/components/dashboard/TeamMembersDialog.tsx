@@ -25,6 +25,7 @@ import {
   InputLabel,
   Select,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import GroupIcon from '@mui/icons-material/Group';
@@ -38,32 +39,102 @@ import EmailIcon from '@mui/icons-material/Email';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CancelIcon from '@mui/icons-material/Cancel';
 import { User, UserRole, TeamInvite } from '@/types';
+import {
+  useUsers,
+  useCurrentUser,
+  useUpdateUser,
+  useDeleteUser,
+  ApiUser,
+} from '@/hooks/api/use-users';
+import {
+  useInvites,
+  useCreateInvite,
+  useRevokeInvite,
+  ApiInvite,
+} from '@/hooks/api/use-invites';
+
+// Transform API user to display format
+function transformApiUser(u: ApiUser): User {
+  return {
+    id: u.id,
+    name: u.name || 'Unknown',
+    email: u.email,
+    role: u.role || 'member',
+    avatar: u.image || undefined,
+    provider: 'email',
+    createdAt: new Date(u.createdAt),
+  };
+}
+
+// Transform API invite to display format
+function transformApiInvite(i: ApiInvite): TeamInvite {
+  return {
+    id: i.id,
+    email: i.email || '',
+    role: i.role || 'member',
+    status: i.status || 'pending',
+    invitedBy: i.invitedBy?.name || i.invitedBy?.email || 'Unknown',
+    invitedAt: new Date(i.createdAt),
+    expiresAt: i.expiresAt ? new Date(i.expiresAt) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  };
+}
 
 interface TeamMembersDialogProps {
   open: boolean;
   onClose: () => void;
-  currentUser: User;
-  members: User[];
-  invites: TeamInvite[];
-  onInviteMember: (email: string, role: UserRole) => void;
-  onRemoveMember: (userId: string) => void;
-  onChangeRole: (userId: string, role: UserRole) => void;
-  onCancelInvite: (inviteId: string) => void;
-  onResendInvite: (inviteId: string) => void;
+  currentUser?: User; // Optional: for mock data mode
+  members?: User[]; // Optional: for mock data mode
+  invites?: TeamInvite[]; // Optional: for mock data mode
+  onInviteMember?: (email: string, role: UserRole) => void; // Optional: for mock data mode
+  onRemoveMember?: (userId: string) => void; // Optional: for mock data mode
+  onChangeRole?: (userId: string, role: UserRole) => void; // Optional: for mock data mode
+  onCancelInvite?: (inviteId: string) => void; // Optional: for mock data mode
+  onResendInvite?: (inviteId: string) => void; // Optional: for mock data mode
+  useMockData?: boolean; // Force mock data mode
 }
 
 export function TeamMembersDialog({
   open,
   onClose,
-  currentUser,
-  members,
-  invites,
+  currentUser: propCurrentUser,
+  members: propMembers,
+  invites: propInvites,
   onInviteMember,
   onRemoveMember,
   onChangeRole,
   onCancelInvite,
   onResendInvite,
+  useMockData = true,
 }: TeamMembersDialogProps) {
+  // API hooks
+  const { data: apiCurrentUser, isLoading: loadingCurrentUser } = useCurrentUser();
+  const { data: apiUsers, isLoading: loadingUsers } = useUsers();
+  const { data: apiInvites, isLoading: loadingInvites } = useInvites();
+  const updateUser = useUpdateUser();
+  const deleteUser = useDeleteUser();
+  const createInvite = useCreateInvite();
+  const revokeInvite = useRevokeInvite();
+
+  // Determine which data to display
+  const currentUser: User | undefined = useMockData
+    ? propCurrentUser
+    : apiCurrentUser
+      ? transformApiUser(apiCurrentUser)
+      : undefined;
+
+  const members: User[] = useMockData
+    ? propMembers || []
+    : apiUsers
+      ? apiUsers.map(transformApiUser)
+      : [];
+
+  const invites: TeamInvite[] = useMockData
+    ? propInvites || []
+    : apiInvites
+      ? apiInvites.filter((i) => i.status === 'pending').map(transformApiInvite)
+      : [];
+
+  const isLoading = !useMockData && (loadingCurrentUser || loadingUsers || loadingInvites);
   const [searchQuery, setSearchQuery] = useState('');
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -72,7 +143,7 @@ export function TeamMembersDialog({
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [roleMenuAnchorEl, setRoleMenuAnchorEl] = useState<null | HTMLElement>(null);
 
-  const isAdmin = currentUser.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin';
 
   const filteredMembers = members.filter(
     (member) =>
@@ -98,30 +169,79 @@ export function TeamMembersDialog({
     setRoleMenuAnchorEl(null);
   };
 
-  const handleRoleChange = (role: UserRole) => {
+  const handleRoleChange = async (role: UserRole) => {
     if (selectedMemberId) {
-      onChangeRole(selectedMemberId, role);
+      if (useMockData) {
+        onChangeRole?.(selectedMemberId, role);
+      } else {
+        try {
+          await updateUser.mutateAsync({ id: selectedMemberId, data: { role } });
+        } catch (error) {
+          console.error('Failed to change role:', error);
+        }
+      }
     }
     handleRoleMenuClose();
     handleMenuClose();
   };
 
-  const handleRemoveMember = () => {
+  const handleRemoveMember = async () => {
     if (selectedMemberId) {
       const member = members.find((m) => m.id === selectedMemberId);
       if (member && window.confirm(`Are you sure you want to remove ${member.name} from the team?`)) {
-        onRemoveMember(selectedMemberId);
+        if (useMockData) {
+          onRemoveMember?.(selectedMemberId);
+        } else {
+          try {
+            await deleteUser.mutateAsync(selectedMemberId);
+          } catch (error) {
+            console.error('Failed to remove member:', error);
+          }
+        }
       }
     }
     handleMenuClose();
   };
 
-  const handleInvite = () => {
+  const handleInvite = async () => {
     if (inviteEmail && inviteEmail.includes('@')) {
-      onInviteMember(inviteEmail, inviteRole);
+      if (useMockData) {
+        onInviteMember?.(inviteEmail, inviteRole);
+      } else {
+        try {
+          await createInvite.mutateAsync({
+            type: 'email',
+            email: inviteEmail,
+            role: inviteRole,
+          });
+        } catch (error) {
+          console.error('Failed to send invite:', error);
+        }
+      }
       setInviteEmail('');
       setInviteRole('member');
       setShowInviteForm(false);
+    }
+  };
+
+  const handleCancelInvite = async (inviteId: string) => {
+    if (useMockData) {
+      onCancelInvite?.(inviteId);
+    } else {
+      try {
+        await revokeInvite.mutateAsync(inviteId);
+      } catch (error) {
+        console.error('Failed to cancel invite:', error);
+      }
+    }
+  };
+
+  const handleResendInvite = (inviteId: string) => {
+    if (useMockData) {
+      onResendInvite?.(inviteId);
+    } else {
+      // Resend would require a new API endpoint - for now just log
+      console.log('Resend invite:', inviteId);
     }
   };
 
@@ -154,6 +274,19 @@ export function TeamMembersDialog({
     if (days === 1) return 'yesterday';
     return `${days} days ago`;
   };
+
+  const isInviting = createInvite.isPending;
+
+  // Show loading state
+  if (isLoading || !currentUser) {
+    return (
+      <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+        <DialogContent sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+          <CircularProgress />
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog
@@ -264,11 +397,11 @@ export function TeamMembersDialog({
               <Button
                 size="small"
                 variant="contained"
-                startIcon={<SendIcon />}
+                startIcon={isInviting ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
                 onClick={handleInvite}
-                disabled={!inviteEmail || !inviteEmail.includes('@')}
+                disabled={!inviteEmail || !inviteEmail.includes('@') || isInviting}
               >
-                Send Invite
+                {isInviting ? 'Sending...' : 'Send Invite'}
               </Button>
             </Box>
           </Box>
@@ -446,7 +579,7 @@ export function TeamMembersDialog({
                       <Button
                         size="small"
                         startIcon={<RefreshIcon />}
-                        onClick={() => onResendInvite(invite.id)}
+                        onClick={() => handleResendInvite(invite.id)}
                       >
                         Resend
                       </Button>
@@ -454,7 +587,7 @@ export function TeamMembersDialog({
                         size="small"
                         color="error"
                         startIcon={<CancelIcon />}
-                        onClick={() => onCancelInvite(invite.id)}
+                        onClick={() => handleCancelInvite(invite.id)}
                       >
                         Cancel
                       </Button>

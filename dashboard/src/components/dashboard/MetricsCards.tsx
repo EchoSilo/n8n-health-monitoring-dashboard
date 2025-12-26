@@ -311,7 +311,6 @@ export function MetricsCards({ metrics }: MetricsCardsProps) {
         value={`${metrics.errorRate}%`}
         icon={<WarningAmberIcon sx={{ fontSize: 20 }} />}
         badge={{ label: errorRateLabel, variant: errorRateStatus }}
-        change={{ value: '-2.3%', direction: 'down' }}
         glowColor={metrics.errorRate > 5 ? 'error' : 'warning'}
       />
       <MetricCard

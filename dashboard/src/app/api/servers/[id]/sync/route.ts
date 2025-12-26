@@ -96,6 +96,138 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Sync executions from n8n
+    let executionsSynced = 0;
+    let errorsSynced = 0;
+    try {
+      // Fetch recent executions (last 100)
+      const n8nExecutions = await client.getExecutions({ limit: 100 });
+
+      // Get workflow mapping (n8nId -> our workflow id)
+      const workflowsForServer = await prisma.workflow.findMany({
+        where: { serverId: id },
+        select: { id: true, n8nId: true },
+      });
+      const workflowMap = new Map(workflowsForServer.map(w => [w.n8nId, w.id]));
+
+      // Get existing execution n8nIds to avoid duplicates
+      const existingExecutions = await prisma.execution.findMany({
+        where: {
+          workflow: { serverId: id },
+        },
+        select: { n8nId: true },
+      });
+      const existingExecutionIds = new Set(existingExecutions.map(e => e.n8nId));
+
+      // Get existing error execution IDs to avoid duplicate errors
+      const existingErrors = await prisma.errorLog.findMany({
+        where: { serverId: id },
+        select: { executionId: true },
+      });
+      const existingErrorExecutionIds = new Set(existingErrors.map(e => e.executionId).filter(Boolean));
+
+      // Track latest execution per workflow for updating lastExecution
+      const workflowLatestExecution = new Map<string, Date>();
+
+      // Insert new executions
+      for (const exec of n8nExecutions) {
+        // Skip if workflow not found (shouldn't happen after sync)
+        const workflowId = workflowMap.get(exec.workflowId);
+        if (!workflowId) continue;
+
+        // Map n8n status to our ExecutionStatus enum
+        const statusMap: Record<string, 'SUCCESS' | 'ERROR' | 'RUNNING' | 'WAITING' | 'CANCELLED'> = {
+          success: 'SUCCESS',
+          error: 'ERROR',
+          running: 'RUNNING',
+          waiting: 'WAITING',
+          crashed: 'ERROR',
+          canceled: 'CANCELLED',
+        };
+        const status = statusMap[exec.status] || 'ERROR';
+
+        // Calculate duration if finished
+        const startedAt = new Date(exec.startedAt);
+        const finishedAt = exec.stoppedAt ? new Date(exec.stoppedAt) : null;
+        const duration = finishedAt ? finishedAt.getTime() - startedAt.getTime() : null;
+
+        // Track latest execution for each workflow
+        const currentLatest = workflowLatestExecution.get(workflowId);
+        if (!currentLatest || startedAt > currentLatest) {
+          workflowLatestExecution.set(workflowId, startedAt);
+        }
+
+        // Skip if execution already exists
+        if (existingExecutionIds.has(exec.id)) continue;
+
+        await prisma.execution.create({
+          data: {
+            n8nId: exec.id,
+            workflowId,
+            status,
+            startedAt,
+            finishedAt,
+            duration,
+            mode: exec.mode,
+            retryOf: exec.retryOf || null,
+          },
+        });
+        executionsSynced++;
+
+        // Create error log for failed executions
+        if ((status === 'ERROR' || exec.status === 'crashed') && !existingErrorExecutionIds.has(exec.id)) {
+          // Get workflow name for better error message
+          const workflowName = n8nWorkflows.find(w => w.id === exec.workflowId)?.name || 'Unknown workflow';
+          const errorMessage = `Workflow "${workflowName}" execution failed`;
+
+          await prisma.errorLog.create({
+            data: {
+              workflowId,
+              serverId: id,
+              executionId: exec.id,
+              message: errorMessage,
+              severity: 'CRITICAL',
+              timestamp: finishedAt || startedAt,
+            },
+          });
+          errorsSynced++;
+        }
+      }
+
+      // Update lastExecution for each workflow
+      for (const [workflowId, latestDate] of workflowLatestExecution) {
+        await prisma.workflow.update({
+          where: { id: workflowId },
+          data: {
+            lastExecution: latestDate,
+            executionCount: {
+              increment: 0, // Trigger update without changing if we want to recalculate
+            },
+          },
+        });
+      }
+
+      // Recalculate execution counts and avg exec time for affected workflows
+      for (const workflowId of workflowLatestExecution.keys()) {
+        const stats = await prisma.execution.aggregate({
+          where: { workflowId },
+          _count: true,
+          _avg: { duration: true },
+        });
+
+        await prisma.workflow.update({
+          where: { id: workflowId },
+          data: {
+            executionCount: stats._count,
+            avgExecTime: Math.round(stats._avg.duration || 0),
+          },
+        });
+      }
+    } catch (execError) {
+      // Log but don't fail the whole sync if executions fail
+      console.error('Failed to sync executions:', execError);
+    }
+
     // Update server status and last checked
     await prisma.server.update({
       where: { id },
@@ -108,10 +240,18 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     return success({
       message: 'Sync completed successfully',
       stats: {
-        total: n8nWorkflows.length,
-        created,
-        updated,
-        deactivated,
+        workflows: {
+          total: n8nWorkflows.length,
+          created,
+          updated,
+          deactivated,
+        },
+        executions: {
+          synced: executionsSynced,
+        },
+        errors: {
+          synced: errorsSynced,
+        },
       },
     });
   } catch (err) {

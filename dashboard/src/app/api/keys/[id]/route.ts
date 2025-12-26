@@ -6,6 +6,16 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
+// Helper to parse JSON scopes from database (SQLite stores arrays as JSON strings)
+function parseScopes(scopesJson: string): string[] {
+  try {
+    const parsed = JSON.parse(scopesJson);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 // GET /api/keys/[id] - Get API key details
 export async function GET(req: NextRequest, { params }: RouteParams) {
   const { user, error } = await requireAuth(req);
@@ -39,7 +49,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     return forbidden('You can only view your own API keys');
   }
 
-  return success(apiKey);
+  return success({
+    ...apiKey,
+    scopes: parseScopes(apiKey.scopes), // Parse JSON for response
+  });
 }
 
 // DELETE /api/keys/[id] - Revoke API key

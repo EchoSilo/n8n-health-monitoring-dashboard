@@ -3,10 +3,33 @@ import { prisma } from '@/lib/db';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { requireAuth, success, created, badRequest } from '@/lib/auth-helpers';
-import { ApiKeyScope } from '@prisma/client';
+
+// Valid API key scopes (matches Prisma enum)
+const API_KEY_SCOPES = [
+  'READ_SERVERS',
+  'WRITE_SERVERS',
+  'READ_WORKFLOWS',
+  'WRITE_WORKFLOWS',
+  'READ_ERRORS',
+  'WRITE_ERRORS',
+  'AI_ANALYSIS',
+  'ADMIN',
+] as const;
+
+type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 
 const KEY_PREFIX = 'n8h_';
 const KEY_LENGTH = 32;
+
+// Helper to parse JSON scopes from database
+function parseScopes(scopesJson: string): ApiKeyScope[] {
+  try {
+    const parsed = JSON.parse(scopesJson);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 // GET /api/keys - List user's API keys
 export async function GET(req: NextRequest) {
@@ -29,12 +52,18 @@ export async function GET(req: NextRequest) {
     orderBy: { createdAt: 'desc' },
   });
 
-  return success(keys);
+  // Parse JSON scopes for each key
+  const keysWithParsedScopes = keys.map((key) => ({
+    ...key,
+    scopes: parseScopes(key.scopes),
+  }));
+
+  return success(keysWithParsedScopes);
 }
 
 const createKeySchema = z.object({
   name: z.string().min(1).max(100),
-  scopes: z.array(z.nativeEnum(ApiKeyScope)).optional(),
+  scopes: z.array(z.enum(API_KEY_SCOPES)).optional(),
   expiresInDays: z.number().min(1).max(365).optional(),
 });
 
@@ -75,7 +104,7 @@ export async function POST(req: NextRequest) {
         keyPrefix,
         keyHash,
         userId: user!.id,
-        scopes: scopes || [],
+        scopes: JSON.stringify(scopes || []), // SQLite: store as JSON string
         expiresAt: expiresInDays
           ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
           : null,
@@ -93,6 +122,7 @@ export async function POST(req: NextRequest) {
     // Return full key only on creation (never stored)
     return created({
       ...apiKey,
+      scopes: parseScopes(apiKey.scopes), // Parse JSON for response
       key: fullKey, // Only returned on creation!
       warning: 'Save this key now. You won\'t be able to see it again.',
     });

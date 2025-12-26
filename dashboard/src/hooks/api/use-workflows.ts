@@ -31,6 +31,8 @@ interface WorkflowFilters {
   serverId?: string;
   status?: string;
   search?: string;
+  sortBy?: 'name' | 'lastExecution' | 'executionCount' | 'avgExecTime' | 'status' | 'updatedAt';
+  sortOrder?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
 }
@@ -50,7 +52,7 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
     throw new Error(data.error || 'API request failed');
   }
 
-  return data.data;
+  return data;
 }
 
 export function useWorkflows(filters?: WorkflowFilters) {
@@ -58,6 +60,8 @@ export function useWorkflows(filters?: WorkflowFilters) {
   if (filters?.serverId) params.append('serverId', filters.serverId);
   if (filters?.status) params.append('status', filters.status.toUpperCase());
   if (filters?.search) params.append('search', filters.search);
+  if (filters?.sortBy) params.append('sortBy', filters.sortBy);
+  if (filters?.sortOrder) params.append('sortOrder', filters.sortOrder);
   if (filters?.limit) params.append('limit', filters.limit.toString());
   if (filters?.offset) params.append('offset', filters.offset.toString());
 

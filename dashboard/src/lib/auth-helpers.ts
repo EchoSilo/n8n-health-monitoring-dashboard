@@ -2,8 +2,32 @@ import { getServerSession } from 'next-auth';
 import { NextRequest, NextResponse } from 'next/server';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { UserRole, ApiKeyScope } from '@prisma/client';
+import { UserRole } from '@prisma/client';
 import crypto from 'crypto';
+
+// API key scopes (SQLite stores as JSON string, not native array)
+export const API_KEY_SCOPES = [
+  'READ_SERVERS',
+  'WRITE_SERVERS',
+  'READ_WORKFLOWS',
+  'WRITE_WORKFLOWS',
+  'READ_ERRORS',
+  'WRITE_ERRORS',
+  'AI_ANALYSIS',
+  'ADMIN',
+] as const;
+
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
+
+// Helper to parse JSON scopes from database
+function parseScopes(scopesJson: string): ApiKeyScope[] {
+  try {
+    const parsed = JSON.parse(scopesJson);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 export interface AuthenticatedUser {
   id: string;
@@ -71,10 +95,13 @@ async function authenticateWithApiKey(
       // Ignore errors updating usage stats
     });
 
+  // Parse JSON scopes string
+  const scopes = parseScopes(apiKey.scopes);
+
   return {
     id: apiKey.user.id,
     role: apiKey.user.role,
-    scopes: apiKey.scopes.length > 0 ? apiKey.scopes : null,
+    scopes: scopes.length > 0 ? scopes : null,
   };
 }
 

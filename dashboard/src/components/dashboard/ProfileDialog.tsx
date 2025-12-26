@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -20,6 +20,7 @@ import {
   ListItemText,
   ListItemSecondaryAction,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import PersonIcon from '@mui/icons-material/Person';
@@ -30,54 +31,112 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import LinkIcon from '@mui/icons-material/Link';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import { User } from '@/types';
+import { useCurrentUser, useUpdateProfile, ApiUser } from '@/hooks/api';
+import { signIn, signOut } from 'next-auth/react';
+
+// Transform API user to display format
+function transformApiUser(u: ApiUser): User {
+  return {
+    id: u.id,
+    name: u.name || 'Unknown',
+    email: u.email,
+    role: u.role,
+    avatar: u.image || undefined,
+    provider: 'email', // Will be determined by accounts
+    createdAt: new Date(u.createdAt),
+  };
+}
 
 interface ProfileDialogProps {
   open: boolean;
   onClose: () => void;
-  user: User;
-  onUpdateProfile: (data: Partial<User>) => void;
-  onConnectProvider: (provider: 'google' | 'github') => void;
-  onDeleteAccount: () => void;
+  user?: User; // Optional: for mock data mode
+  onUpdateProfile?: (data: Partial<User>) => void; // Optional: for mock data mode
+  onConnectProvider?: (provider: 'google' | 'github') => void; // Optional: for mock data mode
+  onDeleteAccount?: () => void; // Optional: for mock data mode
+  useMockData?: boolean; // Force mock data mode
 }
 
 export function ProfileDialog({
   open,
   onClose,
-  user,
+  user: propUser,
   onUpdateProfile,
   onConnectProvider,
   onDeleteAccount,
+  useMockData = true,
 }: ProfileDialogProps) {
-  const [name, setName] = useState(user.name);
+  // API hooks
+  const { data: apiUser, isLoading: loadingUser } = useCurrentUser();
+  const updateProfile = useUpdateProfile();
+
+  // Determine which user to display
+  const user: User | undefined = useMockData
+    ? propUser
+    : apiUser
+      ? transformApiUser(apiUser)
+      : undefined;
+
+  const [name, setName] = useState(user?.name || '');
   const [hasChanges, setHasChanges] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Sync name with user when user changes
+  useEffect(() => {
+    if (user) {
+      setName(user.name);
+      setHasChanges(false);
+    }
+  }, [user?.name]);
+
   const handleNameChange = (value: string) => {
     setName(value);
-    setHasChanges(value !== user.name);
+    setHasChanges(value !== (user?.name || ''));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (hasChanges) {
-      onUpdateProfile({ name });
+      if (useMockData) {
+        onUpdateProfile?.({ name });
+      } else {
+        try {
+          await updateProfile.mutateAsync({ name });
+        } catch (error) {
+          console.error('Failed to update profile:', error);
+          return;
+        }
+      }
       setHasChanges(false);
     }
     onClose();
   };
 
   const handleClose = () => {
-    setName(user.name);
+    setName(user?.name || '');
     setHasChanges(false);
     setShowDeleteConfirm(false);
     onClose();
   };
 
-  const handleDeleteAccount = () => {
+  const handleDeleteAccount = async () => {
     if (showDeleteConfirm) {
-      onDeleteAccount();
+      if (useMockData) {
+        onDeleteAccount?.();
+      } else {
+        // In real mode, sign out (account deletion would need additional API)
+        await signOut({ callbackUrl: '/' });
+      }
       onClose();
     } else {
       setShowDeleteConfirm(true);
+    }
+  };
+
+  const handleConnectProvider = (provider: 'google' | 'github') => {
+    if (useMockData) {
+      onConnectProvider?.(provider);
+    } else {
+      signIn(provider);
     }
   };
 
@@ -112,7 +171,20 @@ export function ProfileDialog({
     }
   };
 
-  const isOAuthUser = user.provider === 'google' || user.provider === 'github';
+  const isOAuthUser = user?.provider === 'google' || user?.provider === 'github';
+  const isLoading = !useMockData && loadingUser;
+  const isSaving = updateProfile.isPending;
+
+  // Show loading state
+  if (isLoading || !user) {
+    return (
+      <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+        <DialogContent sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+          <CircularProgress />
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog
@@ -215,7 +287,7 @@ export function ProfileDialog({
             disabled
             sx={{ mb: 2 }}
             InputProps={{
-              endAdornment: isOAuthUser && (
+              endAdornment: isOAuthUser && user.provider && (
                 <Chip
                   label={`via ${user.provider.charAt(0).toUpperCase() + user.provider.slice(1)}`}
                   size="small"
@@ -229,16 +301,16 @@ export function ProfileDialog({
 
           <TextField
             label="Role"
-            value={user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+            value={user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'Member'}
             fullWidth
             size="small"
             disabled
             InputProps={{
               endAdornment: (
                 <Chip
-                  label={user.role}
+                  label={user.role || 'member'}
                   size="small"
-                  color={getRoleColor(user.role)}
+                  color={getRoleColor(user.role || 'member')}
                   sx={{ height: 24, textTransform: 'capitalize' }}
                 />
               ),
@@ -285,7 +357,7 @@ export function ProfileDialog({
                 <Button
                   size="small"
                   startIcon={<LinkIcon />}
-                  onClick={() => onConnectProvider('google')}
+                  onClick={() => handleConnectProvider('google')}
                 >
                   Connect
                 </Button>
@@ -322,7 +394,7 @@ export function ProfileDialog({
                 <Button
                   size="small"
                   startIcon={<LinkIcon />}
-                  onClick={() => onConnectProvider('github')}
+                  onClick={() => handleConnectProvider('github')}
                 >
                   Connect
                 </Button>
@@ -369,11 +441,16 @@ export function ProfileDialog({
       </DialogContent>
 
       <DialogActions sx={{ px: 3, py: 2 }}>
-        <Button onClick={handleClose} variant="outlined">
+        <Button onClick={handleClose} variant="outlined" disabled={isSaving}>
           Cancel
         </Button>
-        <Button onClick={handleSave} variant="contained" disabled={!hasChanges}>
-          Save Changes
+        <Button
+          onClick={handleSave}
+          variant="contained"
+          disabled={!hasChanges || isSaving}
+          startIcon={isSaving ? <CircularProgress size={16} color="inherit" /> : undefined}
+        >
+          {isSaving ? 'Saving...' : 'Save Changes'}
         </Button>
       </DialogActions>
     </Dialog>

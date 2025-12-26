@@ -48,6 +48,14 @@ const statusConfig: Record<
     border: 'rgba(245, 158, 11, 0.5)',
     orb: '#f59e0b',
   },
+  unknown: {
+    color: 'warning',
+    icon: <NetworkPingIcon sx={{ fontSize: 14 }} />,
+    label: 'Unknown',
+    glow: 'rgba(156, 163, 175, 0.3)',
+    border: 'rgba(156, 163, 175, 0.5)',
+    orb: '#9ca3af',
+  },
 };
 
 function getInitials(name: string): string {
