@@ -1,5 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
+// Check if mock mode is enabled via environment variable
+const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
+
 export interface ApiInvite {
   id: string;
   type: 'email' | 'code';
@@ -38,6 +41,9 @@ interface CreateInviteResponse extends ApiInvite {
   inviteUrl?: string;
 }
 
+// Mock data for demo mode (empty array - no pending invites in demo)
+const MOCK_INVITES: ApiInvite[] = [];
+
 async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...options,
@@ -59,15 +65,23 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
 export function useInvites() {
   return useQuery({
     queryKey: ['invites'],
-    queryFn: () => fetchApi<ApiInvite[]>('/api/invites'),
+    queryFn: () => USE_MOCK_DATA
+      ? Promise.resolve(MOCK_INVITES)
+      : fetchApi<ApiInvite[]>('/api/invites'),
+    staleTime: USE_MOCK_DATA ? Infinity : undefined,
+    retry: USE_MOCK_DATA ? false : 3,
   });
 }
 
 export function useInvite(id: string) {
   return useQuery({
     queryKey: ['invites', id],
-    queryFn: () => fetchApi<ApiInvite>(`/api/invites/${id}`),
+    queryFn: () => USE_MOCK_DATA
+      ? Promise.resolve(MOCK_INVITES.find(i => i.id === id) || null)
+      : fetchApi<ApiInvite>(`/api/invites/${id}`),
     enabled: !!id,
+    staleTime: USE_MOCK_DATA ? Infinity : undefined,
+    retry: USE_MOCK_DATA ? false : 3,
   });
 }
 

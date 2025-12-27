@@ -38,7 +38,6 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import { ErrorLog, ErrorSeverity, AIAnalysis } from '@/types';
 import { useErrors, useResolveError, useErrorWithAnalysis, useAnalyzeError, useErrorTrace, useRefreshTrace, ApiErrorLog, ExecutionTrace, ApiAIAnalysis, ExecutionChainContext, ExecutionSummary } from '@/hooks/api';
-import { RCASection } from './RCASection';
 
 // Extended error type for display
 interface DisplayError {
@@ -52,7 +51,6 @@ interface DisplayError {
   timestamp: Date;
   stackTrace?: string;
   hasAIAnalysis: boolean;
-  hasRca: boolean;
 }
 
 interface ErrorLogPanelProps {
@@ -75,7 +73,6 @@ function transformApiError(e: ApiErrorLog): DisplayError {
     severity: e.severity,
     timestamp: new Date(e.timestamp),
     hasAIAnalysis: e.hasAiAnalysis,
-    hasRca: e.hasRca,
   };
 }
 
@@ -98,7 +95,6 @@ const mockErrors: DisplayError[] = [
     at TLSSocket.emit (events.js:314:20)
     at emitErrorNT (internal/streams/destroy.js:92:8)`,
     hasAIAnalysis: true,
-    hasRca: true,
   },
   {
     id: 'err-002',
@@ -112,7 +108,6 @@ const mockErrors: DisplayError[] = [
     stackTrace: `Error: ECONNRESET
     at TLSWrap.onStreamRead (internal/stream_base_commons.js:209:20)`,
     hasAIAnalysis: true,
-    hasRca: false,
   },
   {
     id: 'err-003',
@@ -126,7 +121,6 @@ const mockErrors: DisplayError[] = [
     stackTrace: `SlackAPIError: ratelimited
     at Object.platformErrorFromResult (/app/node_modules/@slack/web-api/dist/errors.js:62:12)`,
     hasAIAnalysis: false,
-    hasRca: false,
   },
   {
     id: 'err-004',
@@ -138,7 +132,6 @@ const mockErrors: DisplayError[] = [
     severity: 'warning',
     timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000),
     hasAIAnalysis: true,
-    hasRca: false,
   },
   {
     id: 'err-005',
@@ -150,7 +143,6 @@ const mockErrors: DisplayError[] = [
     severity: 'info',
     timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000),
     hasAIAnalysis: false,
-    hasRca: false,
   },
 ];
 
@@ -615,7 +607,6 @@ function AIAnalysisSection({
   const analyzeError = useAnalyzeError();
   const [showMock, setShowMock] = useState(false);
   const [deepInvestigate, setDeepInvestigate] = useState(false);
-  const [expanded, setExpanded] = useState(true);
 
   // For demo mode, use mock analysis
   const displayAnalysis = useMockData ? (showMock ? mockAIAnalysis : null) : analysis;
@@ -724,12 +715,9 @@ function AIAnalysisSection({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          borderBottom: expanded ? 1 : 0,
+          borderBottom: 1,
           borderColor: 'rgba(139, 92, 246, 0.3)',
-          cursor: 'pointer',
-          '&:hover': { bgcolor: 'rgba(139, 92, 246, 0.05)' },
         }}
-        onClick={() => setExpanded(!expanded)}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <AutoAwesomeIcon sx={{ color: '#8b5cf6' }} />
@@ -748,39 +736,10 @@ function AIAnalysisSection({
               }}
             />
           )}
-          <Chip
-            size="small"
-            label={`${displayAnalysis.confidence}% Confidence`}
-            sx={{
-              height: 20,
-              fontSize: '0.65rem',
-              bgcolor: displayAnalysis.confidence >= 80
-                ? 'rgba(16, 185, 129, 0.15)'
-                : displayAnalysis.confidence >= 50
-                ? 'rgba(245, 158, 11, 0.15)'
-                : 'rgba(239, 68, 68, 0.15)',
-              color: displayAnalysis.confidence >= 80
-                ? '#10b981'
-                : displayAnalysis.confidence >= 50
-                ? '#f59e0b'
-                : '#ef4444',
-              border: '1px solid',
-              borderColor: displayAnalysis.confidence >= 80
-                ? 'rgba(16, 185, 129, 0.3)'
-                : displayAnalysis.confidence >= 50
-                ? 'rgba(245, 158, 11, 0.3)'
-                : 'rgba(239, 68, 68, 0.3)',
-            }}
-          />
-        </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Tooltip title="Re-analyze with AI">
             <IconButton
               size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleAnalyze(false, true);
-              }}
+              onClick={() => handleAnalyze(false, true)}
               disabled={isAnalyzing}
               sx={{
                 color: '#8b5cf6',
@@ -790,11 +749,32 @@ function AIAnalysisSection({
               {isAnalyzing ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon fontSize="small" />}
             </IconButton>
           </Tooltip>
-          {expanded ? <ExpandLessIcon sx={{ color: '#8b5cf6' }} /> : <ExpandMoreIcon sx={{ color: '#8b5cf6' }} />}
         </Box>
+        <Chip
+          size="small"
+          label={`${displayAnalysis.confidence}% Confidence`}
+          sx={{
+            height: 24,
+            bgcolor: displayAnalysis.confidence >= 80
+              ? 'rgba(16, 185, 129, 0.15)'
+              : displayAnalysis.confidence >= 50
+              ? 'rgba(245, 158, 11, 0.15)'
+              : 'rgba(239, 68, 68, 0.15)',
+            color: displayAnalysis.confidence >= 80
+              ? '#10b981'
+              : displayAnalysis.confidence >= 50
+              ? '#f59e0b'
+              : '#ef4444',
+            border: '1px solid',
+            borderColor: displayAnalysis.confidence >= 80
+              ? 'rgba(16, 185, 129, 0.3)'
+              : displayAnalysis.confidence >= 50
+              ? 'rgba(245, 158, 11, 0.3)'
+              : 'rgba(239, 68, 68, 0.3)',
+          }}
+        />
       </Box>
-      <Collapse in={expanded}>
-        <Box sx={{ p: 2 }}>
+      <Box sx={{ p: 2 }}>
         {/* Root Cause */}
         {'rootCause' in displayAnalysis && displayAnalysis.rootCause && (
           <Box sx={{ mb: 2 }}>
@@ -882,8 +862,7 @@ function AIAnalysisSection({
             </Typography>
           </Box>
         )}
-        </Box>
-      </Collapse>
+      </Box>
     </Card>
   );
 }
@@ -1246,8 +1225,8 @@ export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, use
                         {error.message}
                       </Typography>
 
-                      {/* AI Analysis tag - shown when AI Analysis or RCA is available */}
-                      {(error.hasAIAnalysis || error.hasRca) && (
+                      {/* AI Analysis tag */}
+                      {error.hasAIAnalysis && (
                         <Box
                           sx={{
                             display: 'inline-flex',
@@ -1384,12 +1363,6 @@ export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, use
                 errorId={selectedError.id}
                 analysis={fullErrorData?.aiAnalysis}
                 isLoading={isLoadingFullError && !useMockData}
-                useMockData={useMockData}
-              />
-
-              {/* Root Cause Analysis Section (5 Whys) */}
-              <RCASection
-                errorId={selectedError.id}
                 useMockData={useMockData}
               />
 

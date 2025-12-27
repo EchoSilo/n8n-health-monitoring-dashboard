@@ -20,6 +20,12 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
   const { id } = await params;
 
+  // Check if we should include traces
+  const url = new URL(req.url);
+  const include = url.searchParams.get('include')?.split(',') || [];
+  const includeTraces = include.includes('traces');
+  const includeAnalysis = include.includes('analysis');
+
   const errorLog = await prisma.errorLog.findUnique({
     where: { id },
     select: {
@@ -56,6 +62,27 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
           url: true,
         },
       },
+      execution: includeTraces ? {
+        select: {
+          id: true,
+          hasFullTrace: true,
+          traces: {
+            select: {
+              id: true,
+              nodeName: true,
+              nodeType: true,
+              status: true,
+              executionTime: true,
+              inputData: true,
+              outputData: true,
+              errorMessage: true,
+              errorStack: true,
+              orderIndex: true,
+            },
+            orderBy: { orderIndex: 'asc' },
+          },
+        },
+      } : undefined,
       aiAnalysis: {
         select: {
           id: true,
@@ -65,6 +92,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
           rootCause: true,
           suggestedFix: true,
           similarIssues: true,
+          tokenUsage: true,
           createdAt: true,
         },
       },
@@ -89,7 +117,10 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     timestamp: errorLog.timestamp,
     workflow: errorLog.workflow,
     server: errorLog.server,
+    execution: errorLog.execution || null,
+    hasAiAnalysis: !!errorLog.aiAnalysis,
     aiAnalysis: errorLog.aiAnalysis,
+    aiConfidence: errorLog.aiAnalysis?.confidence,
     createdAt: errorLog.createdAt,
   });
 }

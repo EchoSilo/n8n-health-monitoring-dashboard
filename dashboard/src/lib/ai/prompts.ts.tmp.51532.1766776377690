@@ -1,0 +1,122 @@
+import { ErrorAnalysisContext } from './types';
+
+/**
+ * Build the system prompt for error analysis
+ */
+export function getSystemPrompt(): string {
+  return `You are an expert n8n workflow automation engineer. Your task is to analyze workflow execution errors and provide actionable root cause analysis.
+
+You will receive:
+1. Error details (message, stack trace, severity)
+2. The failed node information (name, type)
+3. Execution trace showing node-by-node execution with inputs/outputs
+
+Analyze the error and provide:
+1. A confidence score (0-100) for your analysis
+2. The root cause explanation (2-3 sentences)
+3. Suggested fixes (3-5 specific, actionable steps)
+
+Respond ONLY with valid JSON in this exact format:
+{
+  "confidence": <number 0-100>,
+  "rootCause": "<string>",
+  "suggestedFix": ["<step 1>", "<step 2>", "<step 3>"]
+}`;
+}
+
+/**
+ * Build the user prompt with error context
+ */
+export function buildAnalysisPrompt(context: ErrorAnalysisContext): string {
+  const lines: string[] = [];
+
+  lines.push('## Error Details');
+  lines.push(`- **Error Message**: ${context.errorMessage}`);
+  lines.push(`- **Severity**: ${context.severity}`);
+  lines.push(`- **Workflow**: ${context.workflowName}`);
+  lines.push(`- **Server**: ${context.serverName}`);
+  lines.push(`- **Time**: ${context.timestamp.toISOString()}`);
+
+  if (context.nodeName || context.nodeType) {
+    lines.push('');
+    lines.push('## Failed Node');
+    if (context.nodeName) lines.push(`- **Node Name**: ${context.nodeName}`);
+    if (context.nodeType) lines.push(`- **Node Type**: ${context.nodeType}`);
+  }
+
+  if (context.stackTrace) {
+    lines.push('');
+    lines.push('## Stack Trace');
+    lines.push('```');
+    // Truncate stack trace to first 1000 chars to save tokens
+    const truncatedStack = context.stackTrace.length > 1000
+      ? context.stackTrace.substring(0, 1000) + '\n... (truncated)'
+      : context.stackTrace;
+    lines.push(truncatedStack);
+    lines.push('```');
+  }
+
+  if (context.traces.length > 0) {
+    lines.push('');
+    lines.push('## Execution Trace');
+    lines.push('');
+
+    for (const trace of context.traces) {
+      const statusIcon = trace.status === 'success' ? '✓' : trace.status === 'error' ? '✗' : '○';
+      const timeStr = trace.executionTime !== null ? `${trace.executionTime}ms` : '?ms';
+
+      lines.push(`${trace.orderIndex}. [${statusIcon}] **${trace.nodeName}** (${trace.nodeType}) - ${timeStr}`);
+
+      if (trace.status === 'error' && trace.errorMessage) {
+        lines.push(`   - Error: ${trace.errorMessage}`);
+      }
+
+      // Show input data for failed node and the node before it
+      if (trace.inputData && (trace.status === 'error' || trace.orderIndex === context.traces.length - 1)) {
+        const inputPreview = trace.inputData.length > 500
+          ? trace.inputData.substring(0, 500) + '...'
+          : trace.inputData;
+        lines.push(`   - Input: \`${inputPreview}\``);
+      }
+    }
+  }
+
+  lines.push('');
+  lines.push('Please analyze this error and provide your response in the JSON format specified.');
+
+  return lines.join('\n');
+}
+
+/**
+ * Parse AI response into structured result
+ */
+export function parseAnalysisResponse(response: string): {
+  confidence: number;
+  rootCause: string;
+  suggestedFix: string[];
+} | null {
+  try {
+    // Try to extract JSON from the response
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    // Validate required fields
+    if (
+      typeof parsed.confidence !== 'number' ||
+      typeof parsed.rootCause !== 'string' ||
+      !Array.isArray(parsed.suggestedFix)
+    ) {
+      return null;
+    }
+
+    return {
+      confidence: Math.min(100, Math.max(0, Math.round(parsed.confidence))),
+      rootCause: parsed.rootCause,
+      suggestedFix: parsed.suggestedFix.map((s: unknown) => String(s)),
+    };
+  } catch {
+    return null;
+  }
+}

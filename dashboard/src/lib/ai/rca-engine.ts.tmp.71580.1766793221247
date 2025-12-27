@@ -1,0 +1,422 @@
+/**
+ * RCA Engine - Root Cause Analysis Orchestration
+ *
+ * Combines:
+ * 1. ExecutionCorrelator from n8n-debug for execution chain tracing
+ * 2. ErrorInvestigator for live n8n data access
+ * 3. ClaudeSkillsProvider for AI-powered 5 Whys analysis
+ * 4. LLM-optimized formatters for trace presentation
+ */
+
+import { prisma } from '../db';
+import { createN8nClient, N8nClient } from '../n8n-client';
+import {
+  ExecutionCorrelator,
+  formatExecutionTrace,
+  formatCorrelationTree,
+  analyzeErrorPattern,
+} from '../n8n';
+import { ErrorInvestigator, ErrorLogWithRelations } from './investigator';
+import { ClaudeSkillsProvider } from './claude-skills';
+import {
+  RCAContext,
+  RCAResult,
+  RCAOptions,
+  RCADepth,
+  FiveWhysAnalysis,
+  GapAnalysis,
+  CategorizedRecommendations,
+} from './rca-types';
+import { ExecutionTraceContext, ExecutionChainContext } from './types';
+
+export interface RCAEngineConfig {
+  anthropicApiKey: string;
+  anthropicModel?: string;
+  defaultDepth?: RCADepth;
+  correlationTimeWindowMs?: number;
+}
+
+/**
+ * RCA Engine - Main orchestrator for root cause analysis
+ */
+export class RCAEngine {
+  private skillsProvider: ClaudeSkillsProvider;
+  private defaultDepth: RCADepth;
+  private correlationTimeWindowMs: number;
+
+  constructor(config: RCAEngineConfig) {
+    this.skillsProvider = new ClaudeSkillsProvider({
+      apiKey: config.anthropicApiKey,
+      model: config.anthropicModel,
+    });
+    this.defaultDepth = config.defaultDepth || 'standard';
+    this.correlationTimeWindowMs = config.correlationTimeWindowMs || 30000;
+  }
+
+  /**
+   * Run full RCA analysis on an error
+   */
+  async analyze(errorId: string, options: Partial<RCAOptions> = {}): Promise<RCAResult> {
+    const depth = options.depth || this.defaultDepth;
+
+    // 1. Fetch error with all related data
+    const errorLog = await this.fetchErrorWithRelations(errorId);
+    if (!errorLog) {
+      throw new Error(`Error not found: ${errorId}`);
+    }
+
+    // 2. Create n8n client for this server
+    const client = createN8nClient({
+      url: errorLog.server.url,
+      apiKey: errorLog.server.apiKey,
+      apiKeyIv: errorLog.server.apiKeyIv,
+      skipSSL: errorLog.server.skipSSL,
+    });
+
+    // 3. Get execution traces (live or from database)
+    let traces: ExecutionTraceContext[] = [];
+    let formattedTrace: string | undefined;
+    let formattedCorrelationTree: string | undefined;
+    let executionChain: ExecutionChainContext | undefined;
+    let dataSource: 'live' | 'database' = 'database';
+    let correlatedExecutions: RCAContext['correlatedExecutions'] = [];
+
+    // Try live investigation for deep or standard depth
+    if ((depth === 'deep' || depth === 'standard') && errorLog.execution?.n8nId) {
+      try {
+        const result = await this.performLiveInvestigation(
+          errorLog,
+          client,
+          depth
+        );
+
+        traces = result.traces;
+        formattedTrace = result.formattedTrace;
+        formattedCorrelationTree = result.formattedCorrelationTree;
+        executionChain = result.executionChain;
+        correlatedExecutions = result.correlatedExecutions;
+        dataSource = 'live';
+      } catch (err) {
+        console.error('Live investigation failed, falling back to database:', err);
+        // Fall back to database traces
+        traces = this.extractTracesFromDatabase(errorLog);
+        executionChain = await this.buildExecutionChainFromDatabase(errorLog);
+      }
+    } else {
+      // Use database traces for quick analysis
+      traces = this.extractTracesFromDatabase(errorLog);
+      executionChain = await this.buildExecutionChainFromDatabase(errorLog);
+    }
+
+    // 4. Analyze error pattern for classification
+    const errorPatternInfo = analyzeErrorPattern(
+      errorLog.message,
+      errorLog.stackTrace || undefined
+    );
+
+    // 5. Build RCA context
+    const context: RCAContext = {
+      errorId: errorLog.id,
+      errorMessage: errorLog.message,
+      stackTrace: errorLog.stackTrace,
+      severity: errorLog.severity,
+      nodeName: errorLog.nodeName,
+      nodeType: errorLog.nodeType,
+      workflowId: errorLog.workflowId,
+      workflowName: errorLog.workflow.name,
+      serverName: errorLog.server.name,
+      timestamp: errorLog.timestamp,
+      traces,
+      executionChain,
+      correlatedExecutions,
+      formattedTrace,
+      formattedCorrelationTree,
+    };
+
+    // 6. Run Claude Skills analysis
+    const result = await this.skillsProvider.analyze(context, depth);
+
+    // 7. Override data source and error classification
+    result.dataSource = dataSource;
+    if (errorPatternInfo.pattern) {
+      result.errorPattern = errorPatternInfo.pattern;
+    }
+    if (errorPatternInfo.category) {
+      result.errorCategory = errorPatternInfo.category;
+    }
+
+    return result;
+  }
+
+  /**
+   * Perform live investigation using n8n API
+   */
+  private async performLiveInvestigation(
+    errorLog: ErrorLogWithRelations,
+    client: N8nClient,
+    depth: RCADepth
+  ): Promise<{
+    traces: ExecutionTraceContext[];
+    formattedTrace: string;
+    formattedCorrelationTree?: string;
+    executionChain?: ExecutionChainContext;
+    correlatedExecutions: RCAContext['correlatedExecutions'];
+  }> {
+    // Use ErrorInvestigator for execution data
+    const investigator = new ErrorInvestigator(client, this.correlationTimeWindowMs);
+
+    // Build error log with relations for investigator
+    const errorLogForInvestigator = this.buildInvestigatorInput(errorLog);
+    const investigation = await investigator.investigate(errorLogForInvestigator);
+
+    // Format traces using n8n-debug formatter
+    let formattedTrace = '';
+    if (investigation.mainExecution) {
+      formattedTrace = formatExecutionTrace(
+        investigation.mainExecution,
+        client
+      );
+    }
+
+    // Use ExecutionCorrelator for deep analysis
+    let formattedCorrelationTree: string | undefined;
+    const correlatedExecutions: RCAContext['correlatedExecutions'] = [];
+
+    if (depth === 'deep' && errorLog.execution?.n8nId) {
+      try {
+        const correlator = new ExecutionCorrelator(client);
+        await correlator.initialize();
+
+        const correlation = await correlator.correlateExecutions(
+          errorLog.execution.n8nId,
+          { timeWindowMs: this.correlationTimeWindowMs }
+        );
+
+        if (correlation.correlatedExecutions.length > 0) {
+          // Get workflow names for formatting
+          const workflows = new Map<string, string>();
+          const workflowList = await client.listWorkflows();
+          for (const wf of workflowList.data) {
+            workflows.set(wf.id, wf.name);
+          }
+
+          formattedCorrelationTree = formatCorrelationTree(
+            correlation.rootExecution,
+            correlation.correlatedExecutions,
+            client,
+            workflows
+          );
+
+          // Build correlated executions for context
+          for (const corr of correlation.correlatedExecutions) {
+            correlatedExecutions.push({
+              workflowName: workflows.get(corr.execution.workflowId) || 'Unknown',
+              status: corr.execution.status,
+              confidence: corr.confidence,
+              matchReasons: corr.matchReasons,
+              errorMessage: corr.execution.status === 'error'
+                ? client.extractError(corr.execution)?.message
+                : undefined,
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Correlation failed:', err);
+        // Continue without correlation data
+      }
+    }
+
+    return {
+      traces: investigation.mainTraces,
+      formattedTrace,
+      formattedCorrelationTree,
+      executionChain: investigation.executionChain || undefined,
+      correlatedExecutions,
+    };
+  }
+
+  /**
+   * Build investigator input from error log
+   */
+  private buildInvestigatorInput(errorLog: ErrorLogWithRelations): ErrorLogWithRelations {
+    return {
+      id: errorLog.id,
+      message: errorLog.message,
+      severity: errorLog.severity,
+      stackTrace: errorLog.stackTrace,
+      nodeName: errorLog.nodeName,
+      nodeType: errorLog.nodeType,
+      timestamp: errorLog.timestamp,
+      workflowId: errorLog.workflowId,
+      workflow: errorLog.workflow,
+      server: errorLog.server,
+      execution: errorLog.execution ? {
+        id: errorLog.execution.id,
+        n8nId: errorLog.execution.n8nId,
+        hasFullTrace: errorLog.execution.hasFullTrace,
+        status: errorLog.execution.status,
+        startedAt: errorLog.execution.startedAt,
+        finishedAt: errorLog.execution.finishedAt,
+        duration: errorLog.execution.duration,
+        parentExecutionId: null, // Would need schema update
+        correlationId: null,
+        depth: 0,
+        traces: (errorLog.execution.traces || []).map(t => ({
+          id: t.id,
+          nodeName: t.nodeName,
+          nodeType: t.nodeType,
+          status: t.status,
+          executionTime: t.executionTime,
+          inputData: t.inputData,
+          outputData: t.outputData,
+          errorMessage: t.errorMessage,
+          errorStack: t.errorStack,
+          orderIndex: t.orderIndex,
+        })),
+      } : null,
+    };
+  }
+
+  /**
+   * Extract traces from database records
+   */
+  private extractTracesFromDatabase(errorLog: ErrorLogWithRelations): ExecutionTraceContext[] {
+    if (!errorLog.execution?.traces) return [];
+
+    return errorLog.execution.traces.map(t => ({
+      nodeName: t.nodeName,
+      nodeType: t.nodeType,
+      status: t.status as 'success' | 'error' | 'skipped',
+      executionTime: t.executionTime,
+      inputData: t.inputData,
+      outputData: t.outputData,
+      errorMessage: t.errorMessage,
+      errorStack: t.errorStack,
+      orderIndex: t.orderIndex,
+    }));
+  }
+
+  /**
+   * Build execution chain from database
+   */
+  private async buildExecutionChainFromDatabase(
+    errorLog: ErrorLogWithRelations
+  ): Promise<ExecutionChainContext | undefined> {
+    if (!errorLog.execution) return undefined;
+
+    const chain: ExecutionChainContext = {
+      depth: 0,
+      children: [],
+      failedBranch: [{
+        id: errorLog.execution.id,
+        n8nId: errorLog.execution.n8nId,
+        workflowName: errorLog.workflow.name,
+        status: errorLog.execution.status,
+        startedAt: errorLog.execution.startedAt,
+        finishedAt: errorLog.execution.finishedAt,
+        duration: errorLog.execution.duration,
+        errorMessage: errorLog.message,
+      }],
+    };
+
+    return chain;
+  }
+
+  /**
+   * Fetch error with all relations needed for RCA
+   */
+  private async fetchErrorWithRelations(errorId: string): Promise<ErrorLogWithRelations | null> {
+    const errorLog = await prisma.errorLog.findUnique({
+      where: { id: errorId },
+      include: {
+        workflow: {
+          select: { id: true, name: true, n8nId: true },
+        },
+        server: {
+          select: {
+            id: true,
+            name: true,
+            url: true,
+            apiKey: true,
+            apiKeyIv: true,
+            skipSSL: true,
+          },
+        },
+        execution: {
+          include: {
+            traces: {
+              orderBy: { orderIndex: 'asc' },
+            },
+          },
+        },
+      },
+    });
+
+    if (!errorLog) return null;
+
+    return {
+      id: errorLog.id,
+      message: errorLog.message,
+      severity: errorLog.severity,
+      stackTrace: errorLog.stackTrace,
+      nodeName: errorLog.nodeName,
+      nodeType: errorLog.nodeType,
+      timestamp: errorLog.timestamp,
+      workflowId: errorLog.workflowId,
+      workflow: {
+        id: errorLog.workflow.id,
+        name: errorLog.workflow.name,
+        n8nId: errorLog.workflow.n8nId,
+      },
+      server: {
+        id: errorLog.server.id,
+        name: errorLog.server.name,
+        url: errorLog.server.url,
+        apiKey: errorLog.server.apiKey,
+        apiKeyIv: errorLog.server.apiKeyIv,
+        skipSSL: errorLog.server.skipSSL,
+      },
+      execution: errorLog.execution ? {
+        id: errorLog.execution.id,
+        n8nId: errorLog.execution.n8nId,
+        hasFullTrace: errorLog.execution.hasFullTrace,
+        status: errorLog.execution.status,
+        startedAt: errorLog.execution.startedAt,
+        finishedAt: errorLog.execution.finishedAt,
+        duration: errorLog.execution.duration,
+        parentExecutionId: null,
+        correlationId: null,
+        depth: 0,
+        traces: errorLog.execution.traces.map(t => ({
+          id: t.id,
+          nodeName: t.nodeName,
+          nodeType: t.nodeType,
+          status: t.status,
+          executionTime: t.executionTime,
+          inputData: t.inputData,
+          outputData: t.outputData,
+          errorMessage: t.errorMessage,
+          errorStack: t.errorStack,
+          orderIndex: t.orderIndex,
+        })),
+      } : null,
+    };
+  }
+}
+
+/**
+ * Create RCA Engine from environment configuration
+ */
+export function createRCAEngine(): RCAEngine {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY environment variable is required for RCA');
+  }
+
+  return new RCAEngine({
+    anthropicApiKey: apiKey,
+    anthropicModel: process.env.ANTHROPIC_RCA_MODEL || 'claude-sonnet-4-20250514',
+    defaultDepth: (process.env.RCA_DEFAULT_DEPTH as RCADepth) || 'standard',
+    correlationTimeWindowMs: parseInt(process.env.RCA_CORRELATION_WINDOW_MS || '30000', 10),
+  });
+}

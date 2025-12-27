@@ -1,18 +1,20 @@
 name: n8n_health_dashboard
 
 services:
-  # Main Application
+  # Real API Application (port 3000)
   app:
     container_name: n8n_health_dashboard
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_USE_MOCK_DATA=false
     ports:
-      - "3002:3000"
+      - "3000:3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/n8n_dashboard
-      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3002}
+      - DATABASE_URL=file:/app/data/n8n-dashboard.db
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       # OAuth Providers
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
@@ -22,33 +24,49 @@ services:
       # AI Providers
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_RCA_MODEL=${ANTHROPIC_RCA_MODEL:-claude-sonnet-4-20250514}
+      - RCA_DEFAULT_DEPTH=${RCA_DEFAULT_DEPTH:-standard}
+      - RCA_CORRELATION_WINDOW_MS=${RCA_CORRELATION_WINDOW_MS:-30000}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
-      # Redis
       - REDIS_URL=redis://redis:6379
+    volumes:
+      - sqlite_data:/app/data
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_started
     restart: unless-stopped
     networks:
       - n8n-dashboard-network
 
-  # PostgreSQL Database
-  db:
-    container_name: n8n_health_dashboard_db
-    image: postgres:16-alpine
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+  # Mock Data Application (port 3002)
+  app-mock:
+    container_name: n8n_health_dashboard_mock
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_USE_MOCK_DATA=true
+    ports:
+      - "3002:3000"
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=n8n_dashboard
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/n8n-dashboard.db
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3002}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      # OAuth Providers
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      # AI Providers (optional for mock)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - sqlite_data_mock:/app/data
+    depends_on:
+      redis:
+        condition: service_started
     restart: unless-stopped
     networks:
       - n8n-dashboard-network
@@ -69,21 +87,10 @@ services:
     networks:
       - n8n-dashboard-network
 
-  # Optional: Ollama for local AI (uncomment to enable)
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   volumes:
-  #     - ollama_data:/root/.ollama
-  #   ports:
-  #     - "11434:11434"
-  #   restart: unless-stopped
-  #   networks:
-  #     - n8n-dashboard-network
-
 volumes:
-  postgres_data:
+  sqlite_data:
+  sqlite_data_mock:
   redis_data:
-  # ollama_data:
 
 networks:
   n8n-dashboard-network:

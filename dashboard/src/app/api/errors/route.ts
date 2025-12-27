@@ -77,6 +77,11 @@ export async function GET(req: NextRequest) {
             confidence: true,
           },
         },
+        rcaAnalysis: {
+          select: {
+            id: true,
+          },
+        },
       },
       orderBy: { timestamp: 'desc' },
       take: limit,
@@ -98,6 +103,7 @@ export async function GET(req: NextRequest) {
     workflow: e.workflow,
     server: e.server,
     hasAiAnalysis: !!e.aiAnalysis,
+    hasRca: !!e.rcaAnalysis,
     aiConfidence: e.aiAnalysis?.confidence,
   }));
 

@@ -1,5 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
+// Check if mock mode is enabled via environment variable
+const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
+
 export interface ApiUser {
   id: string;
   name: string | null;
@@ -9,6 +12,30 @@ export interface ApiUser {
   emailVerified: string | null;
   createdAt: string;
 }
+
+// Mock data for demo mode
+const MOCK_CURRENT_USER: ApiUser = {
+  id: 'demo-user-1',
+  name: 'Demo User',
+  email: 'demo@example.com',
+  role: 'admin',
+  image: null,
+  emailVerified: null,
+  createdAt: new Date().toISOString(),
+};
+
+const MOCK_USERS: ApiUser[] = [
+  MOCK_CURRENT_USER,
+  {
+    id: 'demo-user-2',
+    name: 'Team Member',
+    email: 'team@example.com',
+    role: 'member',
+    image: null,
+    emailVerified: null,
+    createdAt: new Date().toISOString(),
+  },
+];
 
 interface UpdateProfileData {
   name?: string;
@@ -46,22 +73,34 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
 export function useCurrentUser() {
   return useQuery({
     queryKey: ['users', 'me'],
-    queryFn: () => fetchApi<ApiUser>('/api/users/me'),
+    queryFn: () => USE_MOCK_DATA
+      ? Promise.resolve(MOCK_CURRENT_USER)
+      : fetchApi<ApiUser>('/api/users/me'),
+    staleTime: USE_MOCK_DATA ? Infinity : undefined,
+    retry: USE_MOCK_DATA ? false : 3,
   });
 }
 
 export function useUsers() {
   return useQuery({
     queryKey: ['users'],
-    queryFn: () => fetchApi<ApiUser[]>('/api/users'),
+    queryFn: () => USE_MOCK_DATA
+      ? Promise.resolve(MOCK_USERS)
+      : fetchApi<ApiUser[]>('/api/users'),
+    staleTime: USE_MOCK_DATA ? Infinity : undefined,
+    retry: USE_MOCK_DATA ? false : 3,
   });
 }
 
 export function useUser(id: string) {
   return useQuery({
     queryKey: ['users', id],
-    queryFn: () => fetchApi<ApiUser>(`/api/users/${id}`),
+    queryFn: () => USE_MOCK_DATA
+      ? Promise.resolve(MOCK_USERS.find(u => u.id === id) || MOCK_CURRENT_USER)
+      : fetchApi<ApiUser>(`/api/users/${id}`),
     enabled: !!id,
+    staleTime: USE_MOCK_DATA ? Infinity : undefined,
+    retry: USE_MOCK_DATA ? false : 3,
   });
 }
 

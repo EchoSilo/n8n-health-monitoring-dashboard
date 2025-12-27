@@ -171,22 +171,55 @@ model Workflow {
 }
 
 model Execution {
-  id          String          @id @default(cuid())
-  n8nId       String
-  workflowId  String
-  workflow    Workflow        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  status      ExecutionStatus
-  startedAt   DateTime
-  finishedAt  DateTime?
-  duration    Int? // in milliseconds
-  mode        String? // e.g., "trigger", "manual", "retry"
-  retryOf     String? // execution ID if this is a retry
-  data        Json? // execution data summary
-  createdAt   DateTime        @default(now())
+  id           String          @id @default(cuid())
+  n8nId        String
+  workflowId   String
+  workflow     Workflow        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  status       ExecutionStatus
+  startedAt    DateTime
+  finishedAt   DateTime?
+  duration     Int? // in milliseconds
+  mode         String? // e.g., "trigger", "manual", "retry"
+  retryOf      String? // execution ID if this is a retry
+  data         Json? // execution data summary
+  hasFullTrace Boolean         @default(false) // whether we have detailed trace data
+  traces       ExecutionTrace[]
+  errors       ErrorLog[]
+  createdAt    DateTime        @default(now())
+
+  // Sub-workflow correlation - for tracking parent/child execution chains
+  parentExecutionId String?
+  parentExecution   Execution?  @relation("ExecutionChain", fields: [parentExecutionId], references: [id])
+  childExecutions   Execution[] @relation("ExecutionChain")
+  correlationId     String?     // Shared ID across execution chain (generated on root)
+  rootExecutionId   String?     // ID of the topmost parent execution
+  depth             Int         @default(0) // 0 = root, 1 = child, 2 = grandchild, etc.
 
   @@index([workflowId])
   @@index([status])
   @@index([startedAt])
+  @@index([parentExecutionId])
+  @@index([correlationId])
+}
+
+// Detailed execution trace - stores node-by-node execution data for AI analysis
+model ExecutionTrace {
+  id            String    @id @default(cuid())
+  executionId   String
+  execution     Execution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  nodeName      String
+  nodeType      String
+  status        String    // "success" | "error" | "skipped"
+  executionTime Int?      // milliseconds
+  inputData     String?   // JSON string, truncated to ~10KB
+  outputData    String?   // JSON string, truncated to ~10KB
+  errorMessage  String?
+  errorStack    String?
+  orderIndex    Int       // execution order (1, 2, 3...)
+  createdAt     DateTime  @default(now())
+
+  @@index([executionId])
+  @@index([status])
 }
 
 model ErrorLog {
@@ -196,6 +229,7 @@ model ErrorLog {
   serverId    String
   server      Server        @relation(fields: [serverId], references: [id], onDelete: Cascade)
   executionId String?
+  execution   Execution?    @relation(fields: [executionId], references: [id], onDelete: SetNull)
   message     String
   severity    ErrorSeverity @default(WARNING)
   stackTrace  String?
@@ -209,11 +243,13 @@ model ErrorLog {
   resolvedByUser User?     @relation("ErrorResolver", fields: [resolvedById], references: [id])
 
   aiAnalysis  AIAnalysis?
+  rcaAnalysis RCAAnalysis?
   timestamp   DateTime      @default(now())
   createdAt   DateTime      @default(now())
 
   @@index([workflowId])
   @@index([serverId])
+  @@index([executionId])
   @@index([severity])
   @@index([resolved])
   @@index([timestamp])
@@ -234,6 +270,47 @@ model AIAnalysis {
   createdAt     DateTime @default(now())
 
   @@index([provider])
+}
+
+// Root Cause Analysis with 5 Whys methodology
+model RCAAnalysis {
+  id              String   @id @default(cuid())
+  errorId         String   @unique
+  error           ErrorLog @relation(fields: [errorId], references: [id], onDelete: Cascade)
+
+  // 5 Whys Analysis
+  symptom         String           // Initial error symptom
+  fiveWhysData    Json             // Array of { question, answer, evidence? }
+  rootCause       String           // Final root cause determination
+
+  // Gap Analysis
+  gapAnalysisData Json             // Array of { name, existed, whyMissed }
+
+  // Recommendations
+  quickWins       Json             // < 1 hour fixes
+  mediumTerm      Json             // ~ 1 day fixes
+  longTerm        Json             // 1+ week fixes
+
+  // Classification
+  errorCategory   String           // e.g., "Connection", "Authentication"
+  errorPattern    String           // e.g., "ECONNREFUSED", "401"
+
+  // Metadata
+  confidence      Int              // 0-100
+  dataSource      String           // "live" | "database"
+
+  // AI Provider
+  provider        String
+  model           String
+  skillsUsed      Json             // Array of skill names used
+  tokenUsage      Int?
+  rawResponse     Json?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([errorId])
+  @@index([errorCategory])
 }
 
 model Settings {

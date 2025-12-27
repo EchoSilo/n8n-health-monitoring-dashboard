@@ -7,6 +7,7 @@ export interface ApiErrorLog {
   nodeType: string | null;
   nodeName: string | null;
   executionId: string | null;
+  stackTrace: string | null;
   resolved: boolean;
   resolvedAt: string | null;
   timestamp: string;
@@ -19,8 +20,81 @@ export interface ApiErrorLog {
     id: string;
     name: string;
   };
+  execution?: {
+    id: string;
+    hasFullTrace: boolean;
+    traces?: ExecutionTrace[];
+  };
   hasAiAnalysis: boolean;
+  hasRca: boolean;
   aiConfidence?: number;
+  aiAnalysis?: ApiAIAnalysis | null;
+}
+
+export interface ExecutionTrace {
+  id: string;
+  nodeName: string;
+  nodeType: string;
+  status: string;
+  executionTime: number | null;
+  inputData: string | null;
+  outputData: string | null;
+  errorMessage: string | null;
+  errorStack: string | null;
+  orderIndex: number;
+}
+
+export interface SimilarIssue {
+  id: string;
+  workflow: string;
+  resolution: string;
+}
+
+export interface ExecutionSummary {
+  id: string;
+  n8nId: string;
+  workflowName: string;
+  status: string;
+  startedAt: string;
+  finishedAt: string | null;
+  duration: number | null;
+  errorMessage?: string;
+}
+
+export interface ExecutionChainContext {
+  parent?: ExecutionSummary;
+  children?: ExecutionSummary[];
+  failedBranch?: ExecutionSummary[];
+  depth: number;
+}
+
+export interface ApiAIAnalysis {
+  id: string;
+  errorId: string;
+  provider: string;
+  model: string;
+  confidence: number;
+  rootCause: string;
+  suggestedFix: string[];
+  similarIssues: SimilarIssue[];
+  tokenUsage: number | null;
+  createdAt: string;
+  cached?: boolean;
+  investigation?: {
+    investigatedLive?: boolean;
+    mainTracesCount?: number;
+    childExecutionsCount?: number;
+    correlatedExecutionsCount?: number;
+    investigationError?: string;
+  };
+  executionChain?: ExecutionChainContext | null;
+}
+
+export interface TraceResponse {
+  source: 'database' | 'n8n' | 'n8n-matched' | 'none' | 'error';
+  executionId?: string;
+  message?: string;
+  traces: ExecutionTrace[];
 }
 
 interface ErrorsResponse {
@@ -97,6 +171,57 @@ export function useResolveError() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['errors'] });
+    },
+  });
+}
+
+export function useErrorWithAnalysis(id: string) {
+  return useQuery({
+    queryKey: ['errors', id, 'full'],
+    queryFn: () => fetchApi<ApiErrorLog>(`/api/errors/${id}?include=analysis,traces`),
+    enabled: !!id,
+  });
+}
+
+export function useAnalyzeError() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ errorId, forceRefresh, deepInvestigate }: {
+      errorId: string;
+      forceRefresh?: boolean;
+      deepInvestigate?: boolean;
+    }) =>
+      fetchApi<ApiAIAnalysis>('/api/ai/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ errorId, forceRefresh, deepInvestigate }),
+      }),
+    onSuccess: (_, { errorId }) => {
+      queryClient.invalidateQueries({ queryKey: ['errors', errorId] });
+      queryClient.invalidateQueries({ queryKey: ['errors'] });
+    },
+  });
+}
+
+export function useErrorTrace(errorId: string, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['errors', errorId, 'trace'],
+    queryFn: () => fetchApi<TraceResponse>(`/api/errors/${errorId}/trace`),
+    enabled: !!errorId && enabled,
+  });
+}
+
+export function useRefreshTrace() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (errorId: string) =>
+      fetchApi<TraceResponse>(`/api/errors/${errorId}/trace`, {
+        method: 'POST',
+      }),
+    onSuccess: (_, errorId) => {
+      queryClient.invalidateQueries({ queryKey: ['errors', errorId, 'trace'] });
+      queryClient.invalidateQueries({ queryKey: ['errors', errorId] });
     },
   });
 }

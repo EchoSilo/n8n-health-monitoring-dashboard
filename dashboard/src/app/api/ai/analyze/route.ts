@@ -1,0 +1,330 @@
+import { NextRequest } from 'next/server';
+import { z } from 'zod';
+import { prisma } from '@/lib/db';
+import { requireScope, success, badRequest, notFound } from '@/lib/auth-helpers';
+import { getAIProvider, isAIConfigured } from '@/lib/ai/provider';
+import { ErrorAnalysisContext } from '@/lib/ai/types';
+import { ErrorInvestigator, ErrorLogWithRelations } from '@/lib/ai/investigator';
+import { createN8nClient } from '@/lib/n8n-client';
+
+const analyzeSchema = z.object({
+  errorId: z.string().min(1, 'Error ID is required'),
+  forceRefresh: z.boolean().optional(),
+  deepInvestigate: z.boolean().optional(), // Trigger live n8n investigation
+});
+
+// POST /api/ai/analyze - Analyze an error with AI
+export async function POST(req: NextRequest) {
+  const { user, error: authError } = await requireScope(req, 'AI_ANALYSIS');
+  if (authError) return authError;
+
+  // Check if AI is configured
+  if (!isAIConfigured()) {
+    return badRequest(
+      'AI provider not configured. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or OLLAMA_BASE_URL.'
+    );
+  }
+
+  try {
+    const body = await req.json();
+    const result = analyzeSchema.safeParse(body);
+
+    if (!result.success) {
+      return badRequest('Validation failed',
+        Object.fromEntries(
+          Object.entries(result.error.flatten().fieldErrors)
+            .map(([k, v]) => [k, v?.join(', ') || ''])
+        )
+      );
+    }
+
+    const { errorId, forceRefresh, deepInvestigate } = result.data;
+
+    // Fetch error with all related data (expanded for investigation)
+    const errorLog = await prisma.errorLog.findUnique({
+      where: { id: errorId },
+      include: {
+        workflow: {
+          select: { id: true, name: true, n8nId: true },
+        },
+        server: {
+          select: {
+            id: true,
+            name: true,
+            url: true,
+            apiKey: true,
+            apiKeyIv: true,
+            skipSSL: true,
+          },
+        },
+        execution: {
+          include: {
+            traces: {
+              orderBy: { orderIndex: 'asc' },
+            },
+          },
+        },
+        aiAnalysis: true,
+      },
+    });
+
+    if (!errorLog) {
+      return notFound('Error');
+    }
+
+    // Return cached analysis if exists and not forcing refresh
+    if (errorLog.aiAnalysis && !forceRefresh && !deepInvestigate) {
+      return success({
+        ...errorLog.aiAnalysis,
+        cached: true,
+      });
+    }
+
+    // Build analysis context
+    let context: ErrorAnalysisContext;
+    let investigationMetadata: Record<string, unknown> = {};
+
+    // Check if we need deep investigation
+    const hasStoredTraces = (errorLog.execution?.traces?.length ?? 0) > 0;
+    const shouldInvestigate = deepInvestigate || (!hasStoredTraces && errorLog.execution?.n8nId);
+
+    if (shouldInvestigate && errorLog.server) {
+      // Use ErrorInvestigator for live n8n investigation
+      try {
+        const client = createN8nClient({
+          url: errorLog.server.url,
+          apiKey: errorLog.server.apiKey,
+          apiKeyIv: errorLog.server.apiKeyIv,
+          skipSSL: errorLog.server.skipSSL,
+        });
+
+        const investigator = new ErrorInvestigator(client);
+
+        // Build the error log with proper typing for investigator
+        const errorLogForInvestigator: ErrorLogWithRelations = {
+          id: errorLog.id,
+          message: errorLog.message,
+          severity: errorLog.severity,
+          stackTrace: errorLog.stackTrace,
+          nodeName: errorLog.nodeName,
+          nodeType: errorLog.nodeType,
+          timestamp: errorLog.timestamp,
+          workflowId: errorLog.workflowId,
+          workflow: errorLog.workflow,
+          server: errorLog.server,
+          execution: errorLog.execution ? {
+            id: errorLog.execution.id,
+            n8nId: errorLog.execution.n8nId,
+            hasFullTrace: errorLog.execution.hasFullTrace,
+            status: errorLog.execution.status,
+            startedAt: errorLog.execution.startedAt,
+            finishedAt: errorLog.execution.finishedAt,
+            duration: errorLog.execution.duration,
+            parentExecutionId: null, // Will be populated after schema migration
+            correlationId: null,
+            depth: 0,
+            traces: errorLog.execution.traces.map(t => ({
+              id: t.id,
+              nodeName: t.nodeName,
+              nodeType: t.nodeType,
+              status: t.status,
+              executionTime: t.executionTime,
+              inputData: t.inputData,
+              outputData: t.outputData,
+              errorMessage: t.errorMessage,
+              errorStack: t.errorStack,
+              orderIndex: t.orderIndex,
+            })),
+          } : null,
+        };
+
+        const investigation = await investigator.investigate(errorLogForInvestigator);
+        context = investigator.buildAnalysisContext(errorLogForInvestigator, investigation);
+
+        investigationMetadata = {
+          investigatedLive: true,
+          mainTracesCount: investigation.mainTraces.length,
+          childExecutionsCount: investigation.childExecutions.size,
+          correlatedExecutionsCount: investigation.correlatedExecutions.length,
+        };
+      } catch (investigateError) {
+        console.error('Deep investigation failed:', investigateError);
+        // Fall back to stored data
+        context = buildContextFromStoredData(errorLog);
+        investigationMetadata = {
+          investigatedLive: false,
+          investigationError: investigateError instanceof Error ? investigateError.message : 'Unknown error',
+        };
+      }
+    } else {
+      // Use stored traces
+      context = buildContextFromStoredData(errorLog);
+    }
+
+    // Get AI provider and analyze
+    const provider = getAIProvider();
+    const analysisResult = await provider.analyze(context);
+
+    // Find similar past issues
+    const similarIssues = await findSimilarIssues(errorLog.message, errorLog.nodeType, errorId);
+
+    // Store or update analysis in database
+    const storedAnalysis = await prisma.aIAnalysis.upsert({
+      where: { errorId },
+      create: {
+        errorId,
+        provider: provider.name,
+        model: provider.model,
+        confidence: analysisResult.confidence,
+        rootCause: analysisResult.rootCause,
+        suggestedFix: analysisResult.suggestedFix,
+        similarIssues: similarIssues,
+        rawResponse: analysisResult.rawResponse as object || null,
+        tokenUsage: analysisResult.tokenUsage || null,
+      },
+      update: {
+        provider: provider.name,
+        model: provider.model,
+        confidence: analysisResult.confidence,
+        rootCause: analysisResult.rootCause,
+        suggestedFix: analysisResult.suggestedFix,
+        similarIssues: similarIssues,
+        rawResponse: analysisResult.rawResponse as object || null,
+        tokenUsage: analysisResult.tokenUsage || null,
+      },
+    });
+
+    return success({
+      ...storedAnalysis,
+      cached: false,
+      investigation: investigationMetadata,
+      executionChain: context.executionChain || null,
+    });
+  } catch (err) {
+    console.error('AI analysis error:', err);
+    return badRequest(
+      err instanceof Error ? err.message : 'Failed to analyze error'
+    );
+  }
+}
+
+/**
+ * Build analysis context from stored database data
+ */
+function buildContextFromStoredData(errorLog: {
+  id: string;
+  message: string;
+  stackTrace: string | null;
+  severity: string;
+  nodeName: string | null;
+  nodeType: string | null;
+  timestamp: Date;
+  workflow: { name: string };
+  server: { name: string };
+  execution: {
+    traces: Array<{
+      nodeName: string;
+      nodeType: string;
+      status: string;
+      executionTime: number | null;
+      inputData: string | null;
+      outputData: string | null;
+      errorMessage: string | null;
+      errorStack: string | null;
+      orderIndex: number;
+    }>;
+  } | null;
+}): ErrorAnalysisContext {
+  return {
+    errorId: errorLog.id,
+    errorMessage: errorLog.message,
+    stackTrace: errorLog.stackTrace,
+    severity: errorLog.severity,
+    nodeName: errorLog.nodeName,
+    nodeType: errorLog.nodeType,
+    workflowName: errorLog.workflow.name,
+    serverName: errorLog.server.name,
+    timestamp: errorLog.timestamp,
+    traces: (errorLog.execution?.traces || []).map(trace => ({
+      nodeName: trace.nodeName,
+      nodeType: trace.nodeType,
+      status: trace.status as 'success' | 'error' | 'skipped',
+      executionTime: trace.executionTime,
+      inputData: trace.inputData,
+      outputData: trace.outputData,
+      errorMessage: trace.errorMessage,
+      errorStack: trace.errorStack,
+      orderIndex: trace.orderIndex,
+    })),
+  };
+}
+
+/**
+ * Find similar past issues based on error message and node type
+ */
+async function findSimilarIssues(
+  errorMessage: string,
+  nodeType: string | null,
+  excludeErrorId: string
+): Promise<Array<{ id: string; workflow: string; resolution: string }>> {
+  // Find resolved errors with similar characteristics
+  const similarErrors = await prisma.errorLog.findMany({
+    where: {
+      id: { not: excludeErrorId },
+      resolved: true,
+      OR: [
+        // Same node type
+        nodeType ? { nodeType } : {},
+        // Similar error message (contains key words)
+        {
+          message: {
+            contains: extractKeywords(errorMessage),
+          },
+        },
+      ],
+    },
+    include: {
+      workflow: { select: { name: true } },
+      aiAnalysis: { select: { rootCause: true } },
+    },
+    take: 3,
+    orderBy: { resolvedAt: 'desc' },
+  });
+
+  return similarErrors.map(error => ({
+    id: error.id,
+    workflow: error.workflow.name,
+    resolution: error.aiAnalysis?.rootCause || 'Resolved manually',
+  }));
+}
+
+/**
+ * Extract keywords from error message for similarity matching
+ */
+function extractKeywords(message: string): string {
+  // Extract common error patterns
+  const patterns = [
+    /timeout/i,
+    /connection/i,
+    /refused/i,
+    /404/i,
+    /401/i,
+    /403/i,
+    /500/i,
+    /ECONNREFUSED/i,
+    /ETIMEDOUT/i,
+    /authentication/i,
+    /unauthorized/i,
+    /invalid/i,
+  ];
+
+  for (const pattern of patterns) {
+    if (pattern.test(message)) {
+      return pattern.source.replace(/\\i$/i, '');
+    }
+  }
+
+  // Fallback: return first significant word
+  const words = message.split(/\s+/).filter(w => w.length > 5);
+  return words[0] || message.substring(0, 20);
+}

@@ -2,6 +2,9 @@
 
 import { useState, useMemo } from 'react';
 import { useSession, signOut } from 'next-auth/react';
+
+// Check if mock mode is enabled via environment variable
+const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 import {
   Box,
   Container,
@@ -28,7 +31,7 @@ import { TeamMembersDialog } from '@/components/dashboard/TeamMembersDialog';
 import { Server, ServerFormData, User, TeamInvite, AppSettings } from '@/types';
 
 // API hooks
-import { useServers, useCreateServer, useUpdateServer, useDeleteServer } from '@/hooks/api/use-servers';
+import { useServers, useCreateServer, useUpdateServer, useDeleteServer, useAutoSync } from '@/hooks/api/use-servers';
 import { useCurrentUser, useUsers, useUpdateProfile, useDeleteUser, useUpdateUser } from '@/hooks/api/use-users';
 import { useInvites, useCreateInvite, useRevokeInvite } from '@/hooks/api/use-invites';
 import { useRunningExecutions, useRecentExecutions } from '@/hooks/api/use-executions';
@@ -83,6 +86,9 @@ export default function DashboardPage() {
   const { data: apiInvites, isLoading: invitesLoading } = useInvites();
   const { data: runningExecutionsData } = useRunningExecutions();
   const { data: recentExecutionsData } = useRecentExecutions(100);
+
+  // Auto-sync hook - polls servers at their configured intervals
+  useAutoSync(status === 'authenticated');
 
   // API mutation hooks
   const createServerMutation = useCreateServer();
@@ -480,7 +486,7 @@ export default function DashboardPage() {
           </Box>
 
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '2fr 1fr' }, gap: 4 }}>
-            <Box>
+            <Box sx={{ minWidth: 0 }}>
               <Typography
                 variant="h6"
                 sx={{
@@ -505,13 +511,13 @@ export default function DashboardPage() {
               <WorkflowTable
                 limit={5}
                 selectedServerId={selectedServerId}
-                useMockData={false}
+                useMockData={USE_MOCK_DATA}
                 onViewAll={() => setTabValue(1)}
                 defaultSortBy="lastExecution"
                 defaultSortOrder="desc"
               />
             </Box>
-            <Box>
+            <Box sx={{ minWidth: 0 }}>
               <Typography
                 variant="h6"
                 sx={{
@@ -533,7 +539,7 @@ export default function DashboardPage() {
                 />
                 Recent Errors
               </Typography>
-              <ErrorLogPanel limit={5} selectedServerId={selectedServerId} useMockData={false} onViewAll={() => setTabValue(2)} />
+              <ErrorLogPanel limit={5} selectedServerId={selectedServerId} useMockData={USE_MOCK_DATA} onViewAll={() => setTabValue(2)} />
             </Box>
           </Box>
         </TabPanel>
@@ -542,7 +548,7 @@ export default function DashboardPage() {
           {/* Workflows Tab */}
           <WorkflowTable
             selectedServerId={selectedServerId}
-            useMockData={false}
+            useMockData={USE_MOCK_DATA}
             showSorting={true}
             defaultSortBy="lastExecution"
             defaultSortOrder="desc"
@@ -551,7 +557,7 @@ export default function DashboardPage() {
 
         <TabPanel value={tabValue} index={2}>
           {/* Error Logs Tab */}
-          <ErrorLogPanel selectedServerId={selectedServerId} useMockData={false} />
+          <ErrorLogPanel selectedServerId={selectedServerId} useMockData={USE_MOCK_DATA} />
         </TabPanel>
       </Container>
 
@@ -566,7 +572,7 @@ export default function DashboardPage() {
         onAddServer={handleAddServer}
         onEditServer={handleEditServer}
         onDeleteServer={handleDeleteServer}
-        useMockData={false}
+        useMockData={USE_MOCK_DATA}
       />
 
       <SettingsModal

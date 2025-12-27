@@ -1,0 +1,454 @@
+/**
+ * Claude Skills Provider for RCA
+ *
+ * Uses Claude with embedded n8n expertise skills for advanced root cause analysis.
+ * Skills are embedded in the system prompt to provide domain knowledge.
+ */
+
+import { RCAContext, RCAResult, RCADepth, WhyStep, SafetyNetGap, Recommendation } from './rca-types';
+import fs from 'fs';
+import path from 'path';
+
+export interface ClaudeSkillsConfig {
+  apiKey: string;
+  model?: string;
+}
+
+// Skill content cache
+let skillsCache: Map<string, string> | null = null;
+
+/**
+ * Load skill files from disk
+ */
+function loadSkills(): Map<string, string> {
+  if (skillsCache) return skillsCache;
+
+  skillsCache = new Map();
+
+  const skillsDir = path.join(process.cwd(), 'skills', 'n8n-rca-expert');
+
+  const skillFiles = ['SKILL.md', 'ERROR_CATALOG.md', 'FIVE_WHYS.md', 'FIX_PATTERNS.md'];
+
+  for (const file of skillFiles) {
+    try {
+      const filePath = path.join(skillsDir, file);
+      const content = fs.readFileSync(filePath, 'utf-8');
+      skillsCache.set(file.replace('.md', ''), content);
+    } catch (err) {
+      console.warn(`Failed to load skill file ${file}:`, err);
+    }
+  }
+
+  return skillsCache;
+}
+
+/**
+ * Build the RCA system prompt with embedded skills
+ */
+function buildRCASystemPrompt(depth: RCADepth): string {
+  const skills = loadSkills();
+
+  const lines: string[] = [];
+
+  lines.push('# n8n Root Cause Analysis Expert');
+  lines.push('');
+  lines.push('You are an expert n8n workflow analyst specializing in root cause analysis.');
+  lines.push('Your task is to analyze workflow execution failures using the 5 Whys methodology.');
+  lines.push('');
+
+  // Embed skill content based on depth
+  if (skills.has('SKILL')) {
+    lines.push('## Your Expertise');
+    lines.push('');
+    lines.push(skills.get('SKILL')!);
+    lines.push('');
+  }
+
+  if (skills.has('FIVE_WHYS')) {
+    lines.push('## 5 Whys Methodology');
+    lines.push('');
+    lines.push(skills.get('FIVE_WHYS')!);
+    lines.push('');
+  }
+
+  // Include error catalog for standard and deep analysis
+  if ((depth === 'standard' || depth === 'deep') && skills.has('ERROR_CATALOG')) {
+    lines.push('## Error Pattern Reference');
+    lines.push('');
+    lines.push(skills.get('ERROR_CATALOG')!);
+    lines.push('');
+  }
+
+  // Include fix patterns for deep analysis
+  if (depth === 'deep' && skills.has('FIX_PATTERNS')) {
+    lines.push('## Fix Patterns');
+    lines.push('');
+    lines.push(skills.get('FIX_PATTERNS')!);
+    lines.push('');
+  }
+
+  // Response format instructions
+  lines.push('## Response Format');
+  lines.push('');
+  lines.push('You MUST respond with valid JSON in this exact format:');
+  lines.push('```json');
+  lines.push(JSON.stringify({
+    fiveWhys: {
+      symptom: "The initial error/symptom observed",
+      whys: [
+        { question: "Why did X happen?", answer: "Because Y", evidence: "Data showing Y" }
+      ],
+      rootCause: "The fundamental root cause identified"
+    },
+    gapAnalysis: {
+      safetyNets: [
+        { name: "Safety net name", existed: false, whyMissed: "Reason" }
+      ]
+    },
+    recommendations: {
+      quickWins: [
+        { title: "Quick fix", description: "Details", effort: "quick_win", priority: 1 }
+      ],
+      mediumTerm: [],
+      longTerm: []
+    },
+    errorCategory: "Connection | Authentication | RateLimiting | DataValidation | Expression | NodeSpecific",
+    errorPattern: "e.g., ECONNREFUSED, 401, Missing Field",
+    confidence: 85
+  }, null, 2));
+  lines.push('```');
+  lines.push('');
+  lines.push('IMPORTANT:');
+  lines.push('- Use 3-5 "Why" steps, stopping when you reach the true root cause');
+  lines.push('- Each "Why" should dig deeper than the previous');
+  lines.push('- Include specific evidence from the execution traces');
+  lines.push('- Gap analysis should identify missing safety nets (validation, error handling, etc.)');
+  lines.push('- Recommendations should be specific and actionable');
+  lines.push('- Quick wins take < 1 hour, medium term ~ 1 day, long term 1+ week');
+
+  return lines.join('\n');
+}
+
+/**
+ * Build the RCA user prompt with context
+ */
+function buildRCAUserPrompt(context: RCAContext): string {
+  const lines: string[] = [];
+
+  lines.push('# Error Analysis Request');
+  lines.push('');
+
+  // Error summary
+  lines.push('## Error Summary');
+  lines.push('');
+  lines.push(`| Field | Value |`);
+  lines.push(`|-------|-------|`);
+  lines.push(`| **Error Message** | ${context.errorMessage} |`);
+  lines.push(`| **Severity** | ${context.severity} |`);
+  lines.push(`| **Workflow** | ${context.workflowName} |`);
+  lines.push(`| **Server** | ${context.serverName} |`);
+  lines.push(`| **Timestamp** | ${context.timestamp.toISOString()} |`);
+
+  if (context.nodeName) {
+    lines.push(`| **Failed Node** | ${context.nodeName} |`);
+  }
+  if (context.nodeType) {
+    lines.push(`| **Node Type** | ${context.nodeType} |`);
+  }
+
+  lines.push('');
+
+  // Stack trace
+  if (context.stackTrace) {
+    lines.push('## Stack Trace');
+    lines.push('');
+    lines.push('```');
+    const truncated = context.stackTrace.length > 2000
+      ? context.stackTrace.substring(0, 2000) + '\n... (truncated)'
+      : context.stackTrace;
+    lines.push(truncated);
+    lines.push('```');
+    lines.push('');
+  }
+
+  // Use formatted trace if available (from n8n-debug formatter)
+  if (context.formattedTrace) {
+    lines.push('## Execution Trace');
+    lines.push('');
+    lines.push(context.formattedTrace);
+    lines.push('');
+  } else if (context.traces.length > 0) {
+    // Fall back to building trace manually
+    lines.push('## Execution Trace');
+    lines.push('');
+
+    for (const trace of context.traces) {
+      const icon = trace.status === 'success' ? '✓' : trace.status === 'error' ? '✗' : '○';
+      lines.push(`### ${trace.orderIndex}. [${icon}] ${trace.nodeName}`);
+      lines.push(`- Type: \`${trace.nodeType}\``);
+      lines.push(`- Status: ${trace.status}`);
+      if (trace.executionTime) lines.push(`- Duration: ${trace.executionTime}ms`);
+
+      if (trace.status === 'error') {
+        if (trace.errorMessage) lines.push(`- **Error**: ${trace.errorMessage}`);
+        if (trace.errorStack) {
+          const shortStack = trace.errorStack.split('\n').slice(0, 3).join('\n');
+          lines.push(`- Stack: \`${shortStack}\``);
+        }
+      }
+
+      // Include input data for failed nodes
+      if (trace.inputData && trace.status === 'error') {
+        lines.push('- Input Data:');
+        lines.push('```json');
+        try {
+          const parsed = JSON.parse(trace.inputData);
+          lines.push(JSON.stringify(parsed, null, 2).substring(0, 1000));
+        } catch {
+          lines.push(trace.inputData.substring(0, 1000));
+        }
+        lines.push('```');
+      }
+
+      lines.push('');
+    }
+  }
+
+  // Correlated executions (from ExecutionCorrelator)
+  if (context.formattedCorrelationTree) {
+    lines.push('## Execution Chain (Correlated Workflows)');
+    lines.push('');
+    lines.push(context.formattedCorrelationTree);
+    lines.push('');
+  } else if (context.correlatedExecutions && context.correlatedExecutions.length > 0) {
+    lines.push('## Related Executions');
+    lines.push('');
+    lines.push('These workflows executed around the same time and may be related:');
+    lines.push('');
+
+    for (const exec of context.correlatedExecutions) {
+      lines.push(`- **${exec.workflowName}** (${exec.status})`);
+      lines.push(`  - Confidence: ${Math.round(exec.confidence * 100)}%`);
+      lines.push(`  - Match method: ${exec.matchMethod}`);
+      if (exec.errorMessage) {
+        lines.push(`  - Error: ${exec.errorMessage}`);
+      }
+    }
+    lines.push('');
+  }
+
+  // Execution chain context
+  if (context.executionChain) {
+    lines.push('## Sub-Workflow Chain');
+    lines.push('');
+
+    if (context.executionChain.parent) {
+      lines.push(`**Parent**: ${context.executionChain.parent.workflowName} (${context.executionChain.parent.status})`);
+    }
+
+    if (context.executionChain.failedBranch && context.executionChain.failedBranch.length > 0) {
+      lines.push('');
+      lines.push('**Failure Path**:');
+      for (let i = 0; i < context.executionChain.failedBranch.length; i++) {
+        const exec = context.executionChain.failedBranch[i];
+        const isLast = i === context.executionChain.failedBranch.length - 1;
+        lines.push(`${i + 1}. ${exec.workflowName} (${exec.status})${isLast ? ' ← Actual failure' : ''}`);
+        if (exec.errorMessage) {
+          lines.push(`   Error: ${exec.errorMessage.substring(0, 150)}`);
+        }
+      }
+    }
+
+    lines.push('');
+  }
+
+  // Request
+  lines.push('---');
+  lines.push('');
+  lines.push('Analyze this error using the 5 Whys methodology. Identify the root cause,');
+  lines.push('missing safety nets, and provide actionable recommendations.');
+  lines.push('');
+  lines.push('Respond with JSON only.');
+
+  return lines.join('\n');
+}
+
+/**
+ * Parse RCA response from Claude
+ */
+function parseRCAResponse(content: string): Partial<RCAResult> | null {
+  try {
+    // Extract JSON from response
+    let jsonStr = content;
+
+    // Remove markdown code blocks
+    const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      jsonStr = codeBlockMatch[1];
+    }
+
+    // Find JSON object
+    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    // Validate and normalize
+    const result: Partial<RCAResult> = {};
+
+    // 5 Whys
+    if (parsed.fiveWhys) {
+      result.fiveWhys = {
+        symptom: parsed.fiveWhys.symptom || 'Unknown symptom',
+        whys: (parsed.fiveWhys.whys || []).map((w: Partial<WhyStep>) => ({
+          question: w.question || '',
+          answer: w.answer || '',
+          evidence: w.evidence,
+        })),
+        rootCause: parsed.fiveWhys.rootCause || 'Unknown',
+      };
+    }
+
+    // Gap Analysis
+    if (parsed.gapAnalysis) {
+      result.gapAnalysis = {
+        safetyNets: (parsed.gapAnalysis.safetyNets || []).map((s: Partial<SafetyNetGap>) => ({
+          name: s.name || 'Unknown',
+          existed: s.existed ?? false,
+          whyMissed: s.whyMissed || '',
+        })),
+      };
+    }
+
+    // Recommendations
+    if (parsed.recommendations) {
+      const mapRec = (r: Partial<Recommendation>, effort: Recommendation['effort']): Recommendation => ({
+        title: r.title || 'Untitled',
+        description: r.description || '',
+        effort,
+        nodeChanges: r.nodeChanges,
+        codeChanges: r.codeChanges,
+        priority: r.priority || 1,
+      });
+
+      result.recommendations = {
+        quickWins: (parsed.recommendations.quickWins || []).map((r: Partial<Recommendation>) => mapRec(r, 'quick_win')),
+        mediumTerm: (parsed.recommendations.mediumTerm || []).map((r: Partial<Recommendation>) => mapRec(r, 'medium_term')),
+        longTerm: (parsed.recommendations.longTerm || []).map((r: Partial<Recommendation>) => mapRec(r, 'long_term')),
+      };
+    }
+
+    // Classification
+    result.errorCategory = parsed.errorCategory || 'Unknown';
+    result.errorPattern = parsed.errorPattern || 'Unknown';
+
+    // Confidence
+    result.confidence = typeof parsed.confidence === 'number'
+      ? Math.min(100, Math.max(0, Math.round(parsed.confidence)))
+      : 50;
+
+    return result;
+  } catch (err) {
+    console.error('Failed to parse RCA response:', err);
+    return null;
+  }
+}
+
+/**
+ * Claude Skills Provider for RCA
+ */
+export class ClaudeSkillsProvider {
+  private apiKey: string;
+  private model: string;
+
+  constructor(config: ClaudeSkillsConfig) {
+    this.apiKey = config.apiKey;
+    this.model = config.model || 'claude-sonnet-4-20250514';
+  }
+
+  /**
+   * Run RCA analysis with Claude and embedded skills
+   */
+  async analyze(context: RCAContext, depth: RCADepth = 'standard'): Promise<RCAResult> {
+    const systemPrompt = buildRCASystemPrompt(depth);
+    const userPrompt = buildRCAUserPrompt(context);
+
+    // Adjust max tokens based on depth
+    const maxTokens = depth === 'quick' ? 1500 : depth === 'standard' ? 3000 : 4000;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: this.model,
+        max_tokens: maxTokens,
+        system: systemPrompt,
+        messages: [
+          { role: 'user', content: userPrompt },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Claude API error: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+    const content = data.content?.[0]?.text;
+
+    if (!content) {
+      throw new Error('No response from Claude');
+    }
+
+    const parsed = parseRCAResponse(content);
+
+    const tokenUsage = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
+
+    // Build result with defaults for missing fields
+    const result: RCAResult = {
+      fiveWhys: parsed?.fiveWhys || {
+        symptom: context.errorMessage,
+        whys: [],
+        rootCause: 'Unable to determine root cause',
+      },
+      gapAnalysis: parsed?.gapAnalysis || {
+        safetyNets: [],
+      },
+      recommendations: parsed?.recommendations || {
+        quickWins: [],
+        mediumTerm: [],
+        longTerm: [],
+      },
+      errorCategory: parsed?.errorCategory || 'Unknown',
+      errorPattern: parsed?.errorPattern || 'Unknown',
+      confidence: parsed?.confidence || 50,
+      dataSource: context.formattedTrace ? 'live' : 'database',
+      provider: 'anthropic',
+      model: this.model,
+      skillsUsed: this.getSkillsUsed(depth),
+      tokenUsage,
+      rawResponse: content,
+    };
+
+    return result;
+  }
+
+  /**
+   * Get list of skills used based on depth
+   */
+  private getSkillsUsed(depth: RCADepth): string[] {
+    const skills = ['SKILL', 'FIVE_WHYS'];
+    if (depth === 'standard' || depth === 'deep') {
+      skills.push('ERROR_CATALOG');
+    }
+    if (depth === 'deep') {
+      skills.push('FIX_PATTERNS');
+    }
+    return skills;
+  }
+}

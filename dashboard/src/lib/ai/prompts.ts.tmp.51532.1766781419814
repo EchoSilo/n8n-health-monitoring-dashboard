@@ -1,0 +1,229 @@
+import { ErrorAnalysisContext } from './types';
+
+/**
+ * Build the system prompt for error analysis
+ */
+export function getSystemPrompt(): string {
+  return `You are an expert n8n workflow automation engineer with deep knowledge of:
+
+1. **n8n Node Types**: HTTP Request, Code, Function, Set, IF, Switch, Split In Batches, Merge, Wait, Webhook, Schedule Trigger, and all third-party integrations (Slack, Google Sheets, Airtable, HubSpot, etc.)
+
+2. **Common n8n Error Patterns**:
+   - Connection errors (ECONNREFUSED, ETIMEDOUT, ENOTFOUND) - usually external service/network issues
+   - Authentication errors (401, 403) - expired tokens, wrong credentials, missing scopes
+   - Rate limiting (429) - need to add delays or reduce concurrency
+   - Data validation errors - wrong data types, missing required fields
+   - Expression errors - accessing undefined properties, wrong $json/$node syntax
+   - Code node errors - JavaScript/Python runtime errors
+   - Timeout errors - long-running operations exceeding limits
+
+3. **n8n Architecture**:
+   - Execution runs left-to-right through nodes
+   - Data flows as items in arrays: [{json: {...}}, {json: {...}}]
+   - Expression syntax: {{ $json.field }}, {{ $node["Name"].json.field }}
+   - Sub-workflows via Execute Workflow node
+   - Webhook triggers receive data in $input.first().json
+
+Your task is to analyze workflow execution errors and provide SPECIFIC, ACTIONABLE diagnosis.
+
+IMPORTANT:
+- Be SPECIFIC about what went wrong - don't give generic advice
+- Reference the ACTUAL error message, node names, and data you see
+- Provide concrete fixes with specific parameter values when possible
+- If you see input data, explain what's wrong with it
+- Confidence should reflect how certain you are:
+  - 90-100%: Clear error with obvious fix
+  - 70-89%: Likely cause but some uncertainty
+  - 50-69%: Multiple possible causes
+  - <50%: Need more information to diagnose
+
+Respond ONLY with valid JSON in this exact format:
+{
+  "confidence": <number 0-100>,
+  "rootCause": "<string: 2-4 sentences explaining exactly what failed and why>",
+  "suggestedFix": [
+    "<specific actionable step 1>",
+    "<specific actionable step 2>",
+    "<specific actionable step 3>"
+  ]
+}`;
+}
+
+/**
+ * Build the user prompt with error context
+ */
+export function buildAnalysisPrompt(context: ErrorAnalysisContext): string {
+  const lines: string[] = [];
+
+  lines.push('# n8n Workflow Execution Error Analysis');
+  lines.push('');
+  lines.push('## Error Summary');
+  lines.push('');
+  lines.push(`| Field | Value |`);
+  lines.push(`|-------|-------|`);
+  lines.push(`| **Error** | ${context.errorMessage} |`);
+  lines.push(`| **Severity** | ${context.severity} |`);
+  lines.push(`| **Workflow** | ${context.workflowName} |`);
+  lines.push(`| **Server** | ${context.serverName} |`);
+  lines.push(`| **Time** | ${context.timestamp.toISOString()} |`);
+
+  if (context.nodeName || context.nodeType) {
+    lines.push(`| **Failed Node** | ${context.nodeName || 'Unknown'} |`);
+    lines.push(`| **Node Type** | ${context.nodeType || 'Unknown'} |`);
+  }
+
+  if (context.stackTrace) {
+    lines.push('');
+    lines.push('## Stack Trace');
+    lines.push('');
+    lines.push('```');
+    // Truncate stack trace to first 2000 chars - more context for better analysis
+    const truncatedStack = context.stackTrace.length > 2000
+      ? context.stackTrace.substring(0, 2000) + '\n... (truncated)'
+      : context.stackTrace;
+    lines.push(truncatedStack);
+    lines.push('```');
+  }
+
+  if (context.traces.length > 0) {
+    lines.push('');
+    lines.push('## Execution Trace (Node-by-Node)');
+    lines.push('');
+    lines.push('This shows how the workflow executed. Each node is listed with its status:');
+    lines.push('- ✓ = success, ✗ = error, ○ = skipped');
+    lines.push('');
+
+    for (const trace of context.traces) {
+      const statusIcon = trace.status === 'success' ? '✓' : trace.status === 'error' ? '✗' : '○';
+      const timeStr = trace.executionTime !== null ? `${trace.executionTime}ms` : '?';
+
+      lines.push(`### ${trace.orderIndex}. [${statusIcon}] ${trace.nodeName}`);
+      lines.push(`- **Type**: \`${trace.nodeType}\``);
+      lines.push(`- **Duration**: ${timeStr}ms`);
+      lines.push(`- **Status**: ${trace.status.toUpperCase()}`);
+
+      if (trace.status === 'error') {
+        if (trace.errorMessage) {
+          lines.push(`- **Error**: ${trace.errorMessage}`);
+        }
+        if (trace.errorStack) {
+          const shortStack = trace.errorStack.split('\n').slice(0, 3).join('\n');
+          lines.push(`- **Stack**: \`${shortStack}\``);
+        }
+      }
+
+      // Show input data for failed nodes and the node before failure
+      const isFailedOrBeforeFailure = trace.status === 'error' ||
+        context.traces.some(t => t.status === 'error' && t.orderIndex === trace.orderIndex + 1);
+
+      if (trace.inputData && isFailedOrBeforeFailure) {
+        lines.push(`- **Input Data**:`);
+        lines.push('```json');
+        // Try to pretty print JSON
+        try {
+          const parsed = JSON.parse(trace.inputData);
+          const pretty = JSON.stringify(parsed, null, 2);
+          const truncated = pretty.length > 1000 ? pretty.substring(0, 1000) + '\n  ...' : pretty;
+          lines.push(truncated);
+        } catch {
+          const truncated = trace.inputData.length > 1000
+            ? trace.inputData.substring(0, 1000) + '...'
+            : trace.inputData;
+          lines.push(truncated);
+        }
+        lines.push('```');
+      }
+
+      // Show output data for the node before the failed one
+      if (trace.outputData && trace.status === 'success' &&
+          context.traces.some(t => t.status === 'error' && t.orderIndex === trace.orderIndex + 1)) {
+        lines.push(`- **Output Data** (sent to next node):`);
+        lines.push('```json');
+        try {
+          const parsed = JSON.parse(trace.outputData);
+          const pretty = JSON.stringify(parsed, null, 2);
+          const truncated = pretty.length > 500 ? pretty.substring(0, 500) + '\n  ...' : pretty;
+          lines.push(truncated);
+        } catch {
+          const truncated = trace.outputData.length > 500
+            ? trace.outputData.substring(0, 500) + '...'
+            : trace.outputData;
+          lines.push(truncated);
+        }
+        lines.push('```');
+      }
+
+      lines.push('');
+    }
+  } else {
+    lines.push('');
+    lines.push('## Execution Trace');
+    lines.push('');
+    lines.push('*No detailed execution trace available. Analysis will be based on error message and stack trace only.*');
+    lines.push('');
+  }
+
+  // Add analysis request with specific guidance
+  lines.push('---');
+  lines.push('');
+  lines.push('## Analysis Request');
+  lines.push('');
+  lines.push('Based on the error details above:');
+  lines.push('');
+  lines.push('1. **Identify the root cause**: What specifically failed and why?');
+  lines.push('2. **Check the data flow**: Is there a data issue from a previous node?');
+  lines.push('3. **Consider the node type**: What are common issues with this type of node?');
+  lines.push('4. **Provide specific fixes**: Not "check your configuration" but "set the timeout to 30000ms" or "add error handling for null values"');
+  lines.push('');
+  lines.push('Respond with the JSON format specified in your instructions.');
+
+  return lines.join('\n');
+}
+
+/**
+ * Parse AI response into structured result
+ */
+export function parseAnalysisResponse(response: string): {
+  confidence: number;
+  rootCause: string;
+  suggestedFix: string[];
+} | null {
+  try {
+    // Try to extract JSON from the response (handles markdown code blocks too)
+    let jsonStr = response;
+
+    // Remove markdown code blocks if present
+    const codeBlockMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      jsonStr = codeBlockMatch[1];
+    }
+
+    // Extract JSON object
+    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    // Validate required fields
+    if (
+      typeof parsed.confidence !== 'number' ||
+      typeof parsed.rootCause !== 'string' ||
+      !Array.isArray(parsed.suggestedFix)
+    ) {
+      return null;
+    }
+
+    // Ensure suggestedFix has at least one item
+    if (parsed.suggestedFix.length === 0) {
+      parsed.suggestedFix = ['Review the error details and manually investigate the root cause'];
+    }
+
+    return {
+      confidence: Math.min(100, Math.max(0, Math.round(parsed.confidence))),
+      rootCause: parsed.rootCause,
+      suggestedFix: parsed.suggestedFix.map((s: unknown) => String(s)).slice(0, 5),
+    };
+  } catch {
+    return null;
+  }
+}

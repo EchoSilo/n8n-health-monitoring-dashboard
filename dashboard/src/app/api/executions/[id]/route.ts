@@ -49,7 +49,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
   // Get related error logs for this execution
   const errors = await prisma.errorLog.findMany({
-    where: { executionId: execution.n8nId },
+    where: { executionId: execution.id },
     select: {
       id: true,
       message: true,
