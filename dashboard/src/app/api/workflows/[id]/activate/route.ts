@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { createN8nClient } from '@/lib/n8n-client';
-import { requireScope, success, notFound, badRequest } from '@/lib/auth-helpers';
+import { requireWriteAccess, success, notFound, badRequest } from '@/lib/auth-helpers';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -9,7 +9,7 @@ interface RouteParams {
 
 // POST /api/workflows/[id]/activate - Activate workflow on n8n
 export async function POST(req: NextRequest, { params }: RouteParams) {
-  const { user, error } = await requireScope(req, 'WRITE_WORKFLOWS');
+  const { user, error } = await requireWriteAccess(req, 'WRITE_WORKFLOWS');
   if (error) return error;
 
   const { id } = await params;

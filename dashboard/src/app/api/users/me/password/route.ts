@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { requireAuth, success, badRequest } from '@/lib/auth-helpers';
+import { requireAuth, isDemoAccount, forbidden, success, badRequest } from '@/lib/auth-helpers';
 
 const SALT_ROUNDS = 12;
 
@@ -20,6 +20,11 @@ const changePasswordSchema = z.object({
 export async function PATCH(req: NextRequest) {
   const { user, error } = await requireAuth(req);
   if (error) return error;
+
+  // Block demo account from password changes
+  if (await isDemoAccount(user!.id)) {
+    return forbidden('Demo account is read-only. Create an account to make changes.');
+  }
 
   try {
     const body = await req.json();

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
 import { encrypt, isEncryptionConfigured } from '@/lib/encryption';
-import { requireAuth, requireScope, success, created, badRequest } from '@/lib/auth-helpers';
+import { requireScope, requireWriteAccess, success, created, badRequest } from '@/lib/auth-helpers';
 
 // GET /api/servers - List all servers
 export async function GET(req: NextRequest) {
@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
   if (error) return error;
 
   const servers = await prisma.server.findMany({
+    where: { createdById: user!.id },
     select: {
       id: true,
       name: true,
@@ -70,7 +71,7 @@ const createServerSchema = z.object({
 
 // POST /api/servers - Create a new server
 export async function POST(req: NextRequest) {
-  const { user, error } = await requireScope(req, 'WRITE_SERVERS');
+  const { user, error } = await requireWriteAccess(req, 'WRITE_SERVERS');
   if (error) return error;
 
   try {

@@ -26,7 +26,10 @@ export async function GET(req: NextRequest) {
 
   const { workflowId, serverId, severity, resolved, limit, offset } = result.data;
 
-  const where: Record<string, unknown> = {};
+  // Only show errors from servers owned by the current user
+  const where: Record<string, unknown> = {
+    server: { createdById: user!.id },
+  };
 
   if (workflowId) {
     where.workflowId = workflowId;

@@ -68,11 +68,7 @@ function transformApiServer(s: ApiServer): Server {
 interface ManageServersDialogProps {
   open: boolean;
   onClose: () => void;
-  servers?: Server[]; // Optional: for mock data mode
-  onAddServer?: (data: ServerFormData) => void; // Optional: for mock data mode
-  onEditServer?: (id: string, data: ServerFormData) => void; // Optional: for mock data mode
-  onDeleteServer?: (id: string) => void; // Optional: for mock data mode
-  useMockData?: boolean; // Force mock data mode
+  servers?: Server[]; // Optional: pass pre-fetched data
 }
 
 const defaultFormData: ServerFormData = {
@@ -88,10 +84,6 @@ export function ManageServersDialog({
   open,
   onClose,
   servers: propServers,
-  onAddServer,
-  onEditServer,
-  onDeleteServer,
-  useMockData = true,
 }: ManageServersDialogProps) {
   const [formData, setFormData] = useState<ServerFormData>(defaultFormData);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -108,10 +100,8 @@ export function ManageServersDialog({
   const testConnection = useTestServerConnection();
   const syncServer = useSyncServer();
 
-  // Determine which servers to display
-  const servers: Server[] = useMockData
-    ? (propServers || [])
-    : (apiServers?.map(transformApiServer) || []);
+  // Determine which servers to display (use API data, fallback to props)
+  const servers: Server[] = apiServers?.map(transformApiServer) || propServers || [];
 
   const handleInputChange = (field: keyof ServerFormData, value: string | number | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -125,16 +115,7 @@ export function ManageServersDialog({
       return;
     }
 
-    if (useMockData) {
-      // Mock test for demo mode
-      setConnectionStatus('idle');
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      const isValidUrl = formData.url.startsWith('http://') || formData.url.startsWith('https://');
-      setConnectionStatus(isValidUrl ? 'success' : 'error');
-      if (!isValidUrl) {
-        setError('Connection failed. Please check your URL and API key.');
-      }
-    } else if (editingServerId) {
+    if (editingServerId) {
       // Test existing server connection via API
       try {
         const result = await testConnection.mutateAsync(editingServerId);
@@ -146,11 +127,19 @@ export function ManageServersDialog({
         setConnectionStatus('error');
         setError(err instanceof Error ? err.message : 'Connection test failed');
       }
+    } else {
+      // For new servers, validate URL format only (actual test happens after save)
+      const isValidUrl = formData.url.startsWith('http://') || formData.url.startsWith('https://');
+      if (!isValidUrl) {
+        setConnectionStatus('error');
+        setError('URL must start with http:// or https://');
+      } else {
+        setError('Save the server first to test the actual connection.');
+      }
     }
   };
 
   const handleSyncServer = async (serverId: string) => {
-    if (useMockData) return;
     setSyncingServerId(serverId);
     try {
       await syncServer.mutateAsync(serverId);
@@ -180,17 +169,9 @@ export function ManageServersDialog({
       return;
     }
 
-    if (useMockData) {
-      // Use mock handlers
+    // Use API
+    try {
       if (editingServerId) {
-        onEditServer?.(editingServerId, formData);
-      } else {
-        onAddServer?.(formData);
-      }
-    } else {
-      // Use API
-      try {
-        if (editingServerId) {
           await updateServer.mutateAsync({
             id: editingServerId,
             data: {
@@ -222,10 +203,9 @@ export function ManageServersDialog({
             }
           }
         }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Operation failed');
-        return;
-      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Operation failed');
+      return;
     }
 
     // Reset form
@@ -261,14 +241,10 @@ export function ManageServersDialog({
 
   const handleDelete = async (serverId: string, serverName: string) => {
     if (window.confirm(`Are you sure you want to delete "${serverName}"? This action cannot be undone.`)) {
-      if (useMockData) {
-        onDeleteServer?.(serverId);
-      } else {
-        try {
-          await deleteServer.mutateAsync(serverId);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'Delete failed');
-        }
+      try {
+        await deleteServer.mutateAsync(serverId);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Delete failed');
       }
     }
   };
@@ -538,7 +514,7 @@ export function ManageServersDialog({
           <Chip label={`${servers.length} Connected`} size="small" variant="outlined" />
         </Box>
 
-        {!useMockData && loadingServers ? (
+        {loadingServers ? (
           <Box sx={{ py: 6, textAlign: 'center' }}>
             <CircularProgress size={32} />
             <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
@@ -619,22 +595,20 @@ export function ManageServersDialog({
                   }
                 />
                 <ListItemSecondaryAction>
-                  {!useMockData && (
-                    <Tooltip title="Sync workflows from n8n">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleSyncServer(server.id)}
-                        sx={{ mr: 0.5 }}
-                        disabled={syncingServerId === server.id || editingServerId === server.id}
-                      >
-                        {syncingServerId === server.id ? (
-                          <CircularProgress size={16} />
-                        ) : (
-                          <SyncIcon fontSize="small" />
-                        )}
-                      </IconButton>
-                    </Tooltip>
-                  )}
+                  <Tooltip title="Sync workflows from n8n">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleSyncServer(server.id)}
+                      sx={{ mr: 0.5 }}
+                      disabled={syncingServerId === server.id || editingServerId === server.id}
+                    >
+                      {syncingServerId === server.id ? (
+                        <CircularProgress size={16} />
+                      ) : (
+                        <SyncIcon fontSize="small" />
+                      )}
+                    </IconButton>
+                  </Tooltip>
                   <IconButton
                     size="small"
                     onClick={() => handleEdit(server)}

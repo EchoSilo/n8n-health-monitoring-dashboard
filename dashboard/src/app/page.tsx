@@ -3,8 +3,6 @@
 import { useState, useMemo } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 
-// Check if mock mode is enabled via environment variable
-const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 import {
   Box,
   Container,
@@ -28,10 +26,10 @@ import { ManageServersDialog } from '@/components/dashboard/ManageServersDialog'
 import { SettingsModal } from '@/components/dashboard/SettingsModal';
 import { ProfileDialog } from '@/components/dashboard/ProfileDialog';
 import { TeamMembersDialog } from '@/components/dashboard/TeamMembersDialog';
-import { Server, ServerFormData, User, TeamInvite, AppSettings } from '@/types';
+import { Server, User, TeamInvite, AppSettings } from '@/types';
 
 // API hooks
-import { useServers, useCreateServer, useUpdateServer, useDeleteServer, useAutoSync } from '@/hooks/api/use-servers';
+import { useServers, useAutoSync } from '@/hooks/api/use-servers';
 import { useCurrentUser, useUsers, useUpdateProfile, useDeleteUser, useUpdateUser } from '@/hooks/api/use-users';
 import { useInvites, useCreateInvite, useRevokeInvite } from '@/hooks/api/use-invites';
 import { useRunningExecutions, useRecentExecutions, useTodayExecutionMetrics } from '@/hooks/api/use-executions';
@@ -92,9 +90,6 @@ export default function DashboardPage() {
   useAutoSync(status === 'authenticated');
 
   // API mutation hooks
-  const createServerMutation = useCreateServer();
-  const updateServerMutation = useUpdateServer();
-  const deleteServerMutation = useDeleteServer();
   const updateProfileMutation = useUpdateProfile();
   const updateUserMutation = useUpdateUser();
   const deleteUserMutation = useDeleteUser();
@@ -235,47 +230,6 @@ export default function DashboardPage() {
   const handleRefresh = () => {
     // Refetch all data
     window.location.reload();
-  };
-
-  // Server handlers - use API
-  const handleAddServer = async (data: ServerFormData) => {
-    try {
-      await createServerMutation.mutateAsync({
-        name: data.name,
-        url: data.url,
-        apiKey: data.apiKey || '',
-        pollingInterval: data.pollingInterval,
-      });
-    } catch (error) {
-      console.error('Failed to add server:', error);
-    }
-  };
-
-  const handleEditServer = async (id: string, data: ServerFormData) => {
-    try {
-      await updateServerMutation.mutateAsync({
-        id,
-        data: {
-          name: data.name,
-          url: data.url,
-          apiKey: data.apiKey,
-          pollingInterval: data.pollingInterval,
-        },
-      });
-    } catch (error) {
-      console.error('Failed to update server:', error);
-    }
-  };
-
-  const handleDeleteServer = async (id: string) => {
-    try {
-      await deleteServerMutation.mutateAsync(id);
-      if (selectedServerId === id) {
-        setSelectedServerId(null);
-      }
-    } catch (error) {
-      console.error('Failed to delete server:', error);
-    }
   };
 
   // Profile handlers - use API
@@ -512,7 +466,6 @@ export default function DashboardPage() {
               <WorkflowTable
                 limit={5}
                 selectedServerId={selectedServerId}
-                useMockData={USE_MOCK_DATA}
                 onViewAll={() => setTabValue(1)}
                 defaultSortBy="lastExecution"
                 defaultSortOrder="desc"
@@ -540,7 +493,7 @@ export default function DashboardPage() {
                 />
                 Recent Errors
               </Typography>
-              <ErrorLogPanel limit={5} selectedServerId={selectedServerId} useMockData={USE_MOCK_DATA} onViewAll={() => setTabValue(2)} />
+              <ErrorLogPanel limit={5} selectedServerId={selectedServerId} onViewAll={() => setTabValue(2)} />
             </Box>
           </Box>
         </TabPanel>
@@ -549,7 +502,6 @@ export default function DashboardPage() {
           {/* Workflows Tab */}
           <WorkflowTable
             selectedServerId={selectedServerId}
-            useMockData={USE_MOCK_DATA}
             showSorting={true}
             defaultSortBy="lastExecution"
             defaultSortOrder="desc"
@@ -558,7 +510,7 @@ export default function DashboardPage() {
 
         <TabPanel value={tabValue} index={2}>
           {/* Error Logs Tab */}
-          <ErrorLogPanel selectedServerId={selectedServerId} useMockData={USE_MOCK_DATA} />
+          <ErrorLogPanel selectedServerId={selectedServerId} />
         </TabPanel>
       </Container>
 
@@ -570,10 +522,6 @@ export default function DashboardPage() {
         open={manageServersOpen}
         onClose={() => setManageServersOpen(false)}
         servers={servers}
-        onAddServer={handleAddServer}
-        onEditServer={handleEditServer}
-        onDeleteServer={handleDeleteServer}
-        useMockData={USE_MOCK_DATA}
       />
 
       <SettingsModal

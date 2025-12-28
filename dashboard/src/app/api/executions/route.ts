@@ -25,7 +25,10 @@ export async function GET(req: NextRequest) {
 
   const { workflowId, serverId, status, limit, offset } = result.data;
 
-  const where: Record<string, unknown> = {};
+  // Only show executions from servers owned by the current user
+  const where: Record<string, unknown> = {
+    workflow: { server: { createdById: user!.id } },
+  };
 
   if (workflowId) {
     where.workflowId = workflowId;

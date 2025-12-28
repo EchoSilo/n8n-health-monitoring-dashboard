@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
 import crypto from 'crypto';
-import { requireAuth, success, created, badRequest } from '@/lib/auth-helpers';
+import { requireAuth, isDemoAccount, forbidden, success, created, badRequest } from '@/lib/auth-helpers';
 
 // Valid API key scopes (matches Prisma enum)
 const API_KEY_SCOPES = [
@@ -71,6 +71,11 @@ const createKeySchema = z.object({
 export async function POST(req: NextRequest) {
   const { user, error } = await requireAuth(req);
   if (error) return error;
+
+  // Block demo account from creating API keys
+  if (await isDemoAccount(user!.id)) {
+    return forbidden('Demo account is read-only. Create an account to make changes.');
+  }
 
   try {
     const body = await req.json();

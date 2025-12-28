@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db';
 import { z } from 'zod';
 import {
   requireAdmin,
+  isDemoAccount,
+  forbidden,
   success,
   created,
   badRequest,
@@ -68,6 +70,11 @@ function generateInviteCode(): string {
 export async function POST(req: NextRequest) {
   const { user, error } = await requireAdmin(req);
   if (error) return error;
+
+  // Block demo account from creating invites
+  if (await isDemoAccount(user!.id)) {
+    return forbidden('Demo account is read-only. Create an account to make changes.');
+  }
 
   try {
     const body = await req.json();

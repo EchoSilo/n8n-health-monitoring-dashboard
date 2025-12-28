@@ -17,10 +17,6 @@ RUN npm ci --legacy-peer-deps
 FROM base AS builder
 WORKDIR /app
 
-# Build argument for mock mode (set at build time)
-ARG NEXT_PUBLIC_USE_MOCK_DATA=false
-ENV NEXT_PUBLIC_USE_MOCK_DATA=$NEXT_PUBLIC_USE_MOCK_DATA
-
 # Copy dependencies
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
 import { z } from 'zod';
-import { requireAuth, success, badRequest } from '@/lib/auth-helpers';
+import { requireAuth, isDemoAccount, forbidden, success, badRequest } from '@/lib/auth-helpers';
 
 // GET /api/users/me - Get current user profile
 export async function GET(req: NextRequest) {
@@ -62,6 +62,11 @@ const updateProfileSchema = z.object({
 export async function PATCH(req: NextRequest) {
   const { user, error } = await requireAuth(req);
   if (error) return error;
+
+  // Block demo account from profile updates
+  if (await isDemoAccount(user!.id)) {
+    return forbidden('Demo account is read-only. Create an account to make changes.');
+  }
 
   try {
     const body = await req.json();

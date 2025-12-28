@@ -61,8 +61,7 @@ interface DisplayError {
 interface ErrorLogPanelProps {
   limit?: number;
   selectedServerId?: string | null;
-  errors?: DisplayError[]; // Optional: pass mock data for demo mode
-  useMockData?: boolean; // Force mock data mode
+  errors?: DisplayError[]; // Optional: pass pre-fetched data
   onViewAll?: () => void; // Callback when "View All" button is clicked
 }
 
@@ -81,107 +80,6 @@ function transformApiError(e: ApiErrorLog): DisplayError {
     hasRca: e.hasRca,
   };
 }
-
-// Mock error data for demo mode
-const mockErrors: DisplayError[] = [
-  {
-    id: 'err-001',
-    workflowId: 'wf-004',
-    workflowName: 'Data Backup',
-    serverId: '2',
-    serverName: 'Production-EU',
-    message: 'HTTP Request Timeout: Connection to api.example.com timed out after 30000ms',
-    severity: 'critical',
-    timestamp: new Date(Date.now() - 30 * 60 * 1000),
-    stackTrace: `ETIMEDOUT: Connection timed out after 30000ms
-    at ClientRequest.<anonymous> (/app/node_modules/n8n-core/dist/NodeExecuteFunctions.js:892:24)
-    at Object.onceWrapper (events.js:420:28)
-    at ClientRequest.emit (events.js:314:20)
-    at TLSSocket.socketErrorListener (_http_client.js:427:9)
-    at TLSSocket.emit (events.js:314:20)
-    at emitErrorNT (internal/streams/destroy.js:92:8)`,
-    hasAIAnalysis: true,
-    hasRca: true,
-  },
-  {
-    id: 'err-002',
-    workflowId: 'wf-002',
-    workflowName: 'Order Processing',
-    serverId: '1',
-    serverName: 'Production-US',
-    message: 'Database connection lost: ECONNRESET',
-    severity: 'critical',
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-    stackTrace: `Error: ECONNRESET
-    at TLSWrap.onStreamRead (internal/stream_base_commons.js:209:20)`,
-    hasAIAnalysis: true,
-    hasRca: false,
-  },
-  {
-    id: 'err-003',
-    workflowId: 'wf-006',
-    workflowName: 'Report Generation',
-    serverId: '1',
-    serverName: 'Production-US',
-    message: 'Rate limit exceeded for Slack API',
-    severity: 'warning',
-    timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000),
-    stackTrace: `SlackAPIError: ratelimited
-    at Object.platformErrorFromResult (/app/node_modules/@slack/web-api/dist/errors.js:62:12)`,
-    hasAIAnalysis: false,
-    hasRca: false,
-  },
-  {
-    id: 'err-004',
-    workflowId: 'wf-001',
-    workflowName: 'Customer Sync',
-    serverId: '1',
-    serverName: 'Production-US',
-    message: 'Invalid JSON response from external API',
-    severity: 'warning',
-    timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000),
-    hasAIAnalysis: true,
-    hasRca: false,
-  },
-  {
-    id: 'err-005',
-    workflowId: 'wf-005',
-    workflowName: 'API Integration',
-    serverId: '4',
-    serverName: 'Client-A',
-    message: 'Authentication token expired',
-    severity: 'info',
-    timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000),
-    hasAIAnalysis: false,
-    hasRca: false,
-  },
-];
-
-const mockAIAnalysis: AIAnalysis = {
-  id: 'ai-001',
-  errorId: 'err-001',
-  confidence: 94,
-  rootCause: 'The external API at api.example.com is experiencing high latency or is temporarily unavailable.',
-  suggestedFix: [
-    'Check api.example.com status page for any ongoing incidents',
-    'Increase the HTTP request timeout from 30s to 60s in the workflow settings',
-    'Add retry logic with exponential backoff (3 retries, starting at 1s)',
-    'Consider implementing a circuit breaker pattern for this integration',
-  ],
-  similarIssues: [
-    {
-      id: 'ERR-2024-098',
-      workflow: 'Order Sync',
-      resolution: 'Increased timeout to 60s and added retry with backoff',
-    },
-    {
-      id: 'ERR-2024-045',
-      workflow: 'Customer Import',
-      resolution: 'External API was down, resolved after vendor fix',
-    },
-  ],
-  createdAt: new Date(),
-};
 
 // Node status configuration
 const nodeStatusConfig: Record<string, { color: string; bgColor: string; icon: React.ReactElement }> = {
@@ -655,20 +553,16 @@ function AIAnalysisSection({
   errorId,
   analysis,
   isLoading,
-  useMockData,
   collapseTrigger,
   expandTrigger,
 }: {
   errorId: string;
   analysis?: ApiAIAnalysis | null;
   isLoading?: boolean;
-  useMockData?: boolean;
   collapseTrigger?: number;
   expandTrigger?: number;
 }) {
   const analyzeError = useAnalyzeError();
-  const [showMock, setShowMock] = useState(false);
-  const [deepInvestigate, setDeepInvestigate] = useState(false);
   const [expanded, setExpanded] = useState(true);
 
   // Respond to collapse trigger
@@ -685,14 +579,9 @@ function AIAnalysisSection({
     }
   }, [expandTrigger]);
 
-  // For demo mode, use mock analysis
-  const displayAnalysis = useMockData ? (showMock ? mockAIAnalysis : null) : analysis;
+  const displayAnalysis = analysis;
 
   const handleAnalyze = async (deep: boolean = false, forceRefresh: boolean = false) => {
-    if (useMockData) {
-      setShowMock(true);
-      return;
-    }
     await analyzeError.mutateAsync({ errorId, deepInvestigate: deep, forceRefresh });
   };
 
@@ -1175,7 +1064,7 @@ function formatTimeAgo(date: Date): string {
   return `${days}d ago`;
 }
 
-export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, useMockData = true, onViewAll }: ErrorLogPanelProps) {
+export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, onViewAll }: ErrorLogPanelProps) {
   const [selectedError, setSelectedError] = useState<DisplayError | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -1186,14 +1075,16 @@ export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, use
   const handleCollapseAll = () => setCollapseTrigger(prev => prev + 1);
   const handleExpandAll = () => setExpandTrigger(prev => prev + 1);
 
-  // Fetch from API if not using mock data
-  const { data: apiData, isLoading, error: fetchError } = useErrors(
-    useMockData ? undefined : { serverId: selectedServerId || undefined, limit: limit || 50, resolved: false }
-  );
+  // Fetch from API
+  const { data: apiData, isLoading, error: fetchError } = useErrors({
+    serverId: selectedServerId || undefined,
+    limit: limit || 50,
+    resolved: false,
+  });
 
   // Fetch full error details when drawer is open
   const { data: fullErrorData, isLoading: isLoadingFullError } = useErrorWithAnalysis(
-    selectedError && !useMockData ? selectedError.id : ''
+    selectedError ? selectedError.id : ''
   );
 
   // Resolve error mutation
@@ -1203,20 +1094,13 @@ export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, use
   let displayErrors: DisplayError[];
   if (propErrors) {
     displayErrors = propErrors;
-  } else if (useMockData) {
-    displayErrors = mockErrors;
   } else if (apiData?.errors) {
     displayErrors = apiData.errors.map(transformApiError);
   } else {
     displayErrors = [];
   }
 
-  // Filter errors by selected server (for mock data mode)
-  const filteredErrors = selectedServerId && useMockData
-    ? displayErrors.filter(e => e.serverId === selectedServerId)
-    : displayErrors;
-
-  const errors = limit && useMockData ? filteredErrors.slice(0, limit) : filteredErrors;
+  const errors = displayErrors;
 
   const handleErrorClick = (error: DisplayError) => {
     setSelectedError(error);
@@ -1228,14 +1112,14 @@ export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, use
   };
 
   const handleMarkResolved = async () => {
-    if (selectedError && !useMockData) {
+    if (selectedError) {
       await resolveError.mutateAsync({ id: selectedError.id, resolved: true });
       setDrawerOpen(false);
     }
   };
 
   // Loading state
-  if (!useMockData && isLoading) {
+  if (isLoading) {
     return (
       <Card sx={{ p: 4, textAlign: 'center', border: 1, borderColor: 'divider', borderRadius: 3 }}>
         <CircularProgress size={32} />
@@ -1247,7 +1131,7 @@ export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, use
   }
 
   // Error state
-  if (!useMockData && fetchError) {
+  if (fetchError) {
     return (
       <Alert severity="error" sx={{ borderRadius: 3 }}>
         Failed to load errors: {fetchError.message}
@@ -1581,7 +1465,7 @@ export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, use
               {/* Execution Trace Section */}
               <ExecutionTraceSection
                 traces={fullErrorData?.execution?.traces}
-                isLoading={isLoadingFullError && !useMockData}
+                isLoading={isLoadingFullError}
                 collapseTrigger={collapseTrigger}
                 expandTrigger={expandTrigger}
               />
@@ -1590,8 +1474,7 @@ export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, use
               <AIAnalysisSection
                 errorId={selectedError.id}
                 analysis={fullErrorData?.aiAnalysis}
-                isLoading={isLoadingFullError && !useMockData}
-                useMockData={useMockData}
+                isLoading={isLoadingFullError}
                 collapseTrigger={collapseTrigger}
                 expandTrigger={expandTrigger}
               />
@@ -1608,7 +1491,6 @@ export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, use
               {/* Root Cause Analysis Section (5 Whys) */}
               <RCASection
                 errorId={selectedError.id}
-                useMockData={useMockData}
                 collapseTrigger={collapseTrigger}
                 expandTrigger={expandTrigger}
               />

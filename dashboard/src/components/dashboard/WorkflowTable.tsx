@@ -51,101 +51,12 @@ type SortOrder = 'asc' | 'desc';
 interface WorkflowTableProps {
   limit?: number;
   selectedServerId?: string | null;
-  workflows?: DisplayWorkflow[]; // Optional: pass mock data for demo mode
-  useMockData?: boolean; // Force mock data mode
+  workflows?: DisplayWorkflow[]; // Optional: pass pre-fetched data
   onViewAll?: () => void; // Callback when "View All" button is clicked
   defaultSortBy?: SortField; // Default sort field
   defaultSortOrder?: SortOrder; // Default sort order
   showSorting?: boolean; // Whether to show sortable headers
 }
-
-// Mock workflow data for demo mode
-const mockWorkflows: DisplayWorkflow[] = [
-  {
-    id: '1',
-    n8nId: 'wf-001',
-    name: 'Customer Sync',
-    serverId: '1',
-    serverName: 'Production-US',
-    status: 'active',
-    lastExecution: new Date(Date.now() - 5 * 60 * 1000),
-    executionTime: 234,
-    executionCount: 1523,
-    successRate: 99.8,
-  },
-  {
-    id: '2',
-    n8nId: 'wf-002',
-    name: 'Order Processing',
-    serverId: '1',
-    serverName: 'Production-US',
-    status: 'running',
-    lastExecution: new Date(),
-    executionTime: 1250,
-    executionCount: 892,
-    successRate: 100,
-  },
-  {
-    id: '3',
-    n8nId: 'wf-003',
-    name: 'Email Notifications',
-    serverId: '2',
-    serverName: 'Production-EU',
-    status: 'active',
-    lastExecution: new Date(Date.now() - 15 * 60 * 1000),
-    executionTime: 156,
-    executionCount: 4521,
-    successRate: 85.5,
-  },
-  {
-    id: '4',
-    n8nId: 'wf-004',
-    name: 'Data Backup',
-    serverId: '2',
-    serverName: 'Production-EU',
-    status: 'failed',
-    lastExecution: new Date(Date.now() - 30 * 60 * 1000),
-    executionTime: 0,
-    executionCount: 756,
-    successRate: 0,
-  },
-  {
-    id: '5',
-    n8nId: 'wf-005',
-    name: 'API Integration',
-    serverId: '4',
-    serverName: 'Client-A',
-    status: 'inactive',
-    lastExecution: new Date(Date.now() - 2 * 60 * 60 * 1000),
-    executionTime: 890,
-    executionCount: 234,
-    successRate: 95,
-  },
-  {
-    id: '6',
-    n8nId: 'wf-006',
-    name: 'Report Generation',
-    serverId: '1',
-    serverName: 'Production-US',
-    status: 'active',
-    lastExecution: new Date(Date.now() - 60 * 60 * 1000),
-    executionTime: 3450,
-    executionCount: 125,
-    successRate: 98.2,
-  },
-  {
-    id: '7',
-    n8nId: 'wf-007',
-    name: 'Slack Alerts',
-    serverId: '2',
-    serverName: 'Production-EU',
-    status: 'active',
-    lastExecution: new Date(Date.now() - 2 * 60 * 1000),
-    executionTime: 89,
-    executionCount: 8901,
-    successRate: 99.9,
-  },
-];
 
 // Transform API workflow to display format
 function transformApiWorkflow(w: ApiWorkflow): DisplayWorkflow {
@@ -232,7 +143,6 @@ export function WorkflowTable({
   limit,
   selectedServerId,
   workflows: propWorkflows,
-  useMockData = true,
   onViewAll,
   defaultSortBy = 'lastExecution',
   defaultSortOrder = 'desc',
@@ -243,15 +153,13 @@ export function WorkflowTable({
   const [sortBy, setSortBy] = useState<SortField>(defaultSortBy);
   const [sortOrder, setSortOrder] = useState<SortOrder>(defaultSortOrder);
 
-  // Fetch from API if not using mock data
-  const { data: apiData, isLoading, error } = useWorkflows(
-    useMockData ? undefined : {
-      serverId: selectedServerId || undefined,
-      limit: limit || 50,
-      sortBy,
-      sortOrder,
-    }
-  );
+  // Fetch from API
+  const { data: apiData, isLoading, error } = useWorkflows({
+    serverId: selectedServerId || undefined,
+    limit: limit || 50,
+    sortBy,
+    sortOrder,
+  });
 
   const handleSort = (field: SortField) => {
     if (sortBy === field) {
@@ -266,24 +174,17 @@ export function WorkflowTable({
   let displayWorkflows: DisplayWorkflow[];
   if (propWorkflows) {
     displayWorkflows = propWorkflows;
-  } else if (useMockData) {
-    displayWorkflows = mockWorkflows;
   } else if (apiData?.workflows) {
     displayWorkflows = apiData.workflows.map(transformApiWorkflow);
   } else {
     displayWorkflows = [];
   }
 
-  // Filter workflows by selected server (for mock data mode)
-  const filteredWorkflows = selectedServerId && useMockData
-    ? displayWorkflows.filter(w => w.serverId === selectedServerId)
-    : displayWorkflows;
-
-  const workflows = limit && useMockData ? filteredWorkflows.slice(0, limit) : filteredWorkflows;
+  const workflows = displayWorkflows;
   const showPagination = !limit;
 
   // Loading state
-  if (!useMockData && isLoading) {
+  if (isLoading) {
     return (
       <Card sx={{ p: 4, textAlign: 'center', border: 1, borderColor: 'divider', borderRadius: 3 }}>
         <CircularProgress size={32} />
@@ -295,7 +196,7 @@ export function WorkflowTable({
   }
 
   // Error state
-  if (!useMockData && error) {
+  if (error) {
     return (
       <Alert severity="error" sx={{ borderRadius: 3 }}>
         Failed to load workflows: {error.message}
@@ -548,7 +449,7 @@ export function WorkflowTable({
         <TablePagination
           rowsPerPageOptions={[5, 10, 25]}
           component="div"
-          count={filteredWorkflows.length}
+          count={workflows.length}
           rowsPerPage={rowsPerPage}
           page={page}
           onPageChange={handleChangePage}

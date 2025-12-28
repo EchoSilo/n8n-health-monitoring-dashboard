@@ -5,6 +5,9 @@ import { prisma } from '@/lib/db';
 import { UserRole } from '@prisma/client';
 import crypto from 'crypto';
 
+// Demo account email - this account has read-only access
+export const DEMO_EMAIL = 'mock@example.com';
+
 // API key scopes (SQLite stores as JSON string, not native array)
 export const API_KEY_SCOPES = [
   'READ_SERVERS',
@@ -230,5 +233,40 @@ export async function requireScope(req: NextRequest, scope: ApiKeyScope) {
   if (!hasScope(user.role, user.scopes, scope)) {
     return { user: null, error: forbidden(`Scope '${scope}' required`) };
   }
+  return { user, error: null };
+}
+
+/**
+ * Check if a user ID belongs to the demo account
+ */
+export async function isDemoAccount(userId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true },
+  });
+  return user?.email === DEMO_EMAIL;
+}
+
+/**
+ * Require write access - blocks demo account from mutations
+ * Use this instead of requireScope for any write operations
+ */
+export async function requireWriteAccess(req: NextRequest, scope: ApiKeyScope) {
+  const user = await getAuthenticatedUser(req);
+  if (!user) {
+    return { user: null, error: unauthorized() };
+  }
+  if (!hasScope(user.role, user.scopes, scope)) {
+    return { user: null, error: forbidden(`Scope '${scope}' required`) };
+  }
+
+  // Block demo account from write operations
+  if (await isDemoAccount(user.id)) {
+    return {
+      user: null,
+      error: forbidden('Demo account is read-only. Create an account to make changes.'),
+    };
+  }
+
   return { user, error: null };
 }

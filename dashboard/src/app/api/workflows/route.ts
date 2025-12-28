@@ -27,7 +27,10 @@ export async function GET(req: NextRequest) {
 
   const { serverId, status, search, sortBy, sortOrder, limit, offset } = result.data;
 
-  const where: Record<string, unknown> = {};
+  // Only show workflows from servers owned by the current user
+  const where: Record<string, unknown> = {
+    server: { createdById: user!.id },
+  };
 
   // Build orderBy - handle nulls for lastExecution (put nulls last when desc, first when asc)
   const orderBy: Record<string, string | { sort: string; nulls: string }> = {};

@@ -5,6 +5,9 @@ import { encrypt, isEncryptionConfigured } from '@/lib/encryption';
 import {
   requireScope,
   requireAdmin,
+  requireWriteAccess,
+  isDemoAccount,
+  forbidden,
   success,
   notFound,
   badRequest,
@@ -70,7 +73,7 @@ const updateServerSchema = z.object({
 
 // PATCH /api/servers/[id] - Update server
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
-  const { user, error } = await requireScope(req, 'WRITE_SERVERS');
+  const { user, error } = await requireWriteAccess(req, 'WRITE_SERVERS');
   if (error) return error;
 
   const { id } = await params;
@@ -161,6 +164,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const { user, error } = await requireAdmin(req);
   if (error) return error;
+
+  // Block demo account from deletions
+  if (await isDemoAccount(user!.id)) {
+    return forbidden('Demo account is read-only. Create an account to make changes.');
+  }
 
   const { id } = await params;
 

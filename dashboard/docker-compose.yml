@@ -1,14 +1,12 @@
 name: n8n_health_dashboard
 
 services:
-  # Real API Application (port 3000)
+  # n8n Health Monitoring Dashboard
   app:
     container_name: n8n_health_dashboard
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_USE_MOCK_DATA=false
     ports:
       - "3000:3000"
     environment:
@@ -38,39 +36,6 @@ services:
     networks:
       - n8n-dashboard-network
 
-  # Mock Data Application (port 3002)
-  app-mock:
-    container_name: n8n_health_dashboard_mock
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_USE_MOCK_DATA=true
-    ports:
-      - "3002:3000"
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=file:/app/data/n8n-dashboard.db
-      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3002}
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
-      # OAuth Providers
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
-      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
-      # AI Providers (optional for mock)
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - REDIS_URL=redis://redis:6379
-    volumes:
-      - sqlite_data_mock:/app/data
-    depends_on:
-      redis:
-        condition: service_started
-    restart: unless-stopped
-    networks:
-      - n8n-dashboard-network
-
   # Redis for caching and real-time features
   redis:
     container_name: n8n_health_dashboard_redis
@@ -89,7 +54,6 @@ services:
 
 volumes:
   sqlite_data:
-  sqlite_data_mock:
   redis_data:
 
 networks:

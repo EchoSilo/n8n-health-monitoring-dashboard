@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db';
 import { z } from 'zod';
 import {
   requireScope,
-  getAuthenticatedUser,
+  requireWriteAccess,
   success,
   notFound,
   badRequest,
@@ -131,7 +131,7 @@ const updateErrorSchema = z.object({
 
 // PATCH /api/errors/[id] - Update error (mark as resolved)
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
-  const { user, error } = await requireScope(req, 'WRITE_ERRORS');
+  const { user, error } = await requireWriteAccess(req, 'WRITE_ERRORS');
   if (error) return error;
 
   const { id } = await params;

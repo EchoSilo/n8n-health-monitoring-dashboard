@@ -7,36 +7,9 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import StorageIcon from '@mui/icons-material/Storage';
 import TimelineIcon from '@mui/icons-material/Timeline';
+import { SparkLineChart } from '@mui/x-charts/SparkLineChart';
 import { DashboardMetrics } from '@/types';
 import { TodayExecutionMetrics } from '@/hooks/api';
-
-// Simple SVG Sparkline component (no external dependencies)
-function Sparkline({ data, height = 30, color = '#8b5cf6' }: { data: number[]; height?: number; color?: string }) {
-  if (!data || data.length === 0) return null;
-
-  const max = Math.max(...data, 1);
-  const min = Math.min(...data, 0);
-  const range = max - min || 1;
-  const width = 100; // percentage-based width
-  const points = data.map((value, index) => {
-    const x = (index / (data.length - 1)) * width;
-    const y = height - ((value - min) / range) * (height - 4) - 2;
-    return `${x},${y}`;
-  }).join(' ');
-
-  return (
-    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-      <polyline
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        points={points}
-      />
-    </svg>
-  );
-}
 
 interface MetricsCardsProps {
   metrics: DashboardMetrics;
@@ -482,7 +455,14 @@ function ExecutionsTodayCard({
 
         {/* Sparkline */}
         <Box sx={{ height: 30, mt: 1 }}>
-          <Sparkline data={hourlyData} height={30} color="#8b5cf6" />
+          <SparkLineChart
+            data={hourlyData}
+            height={30}
+            showHighlight
+            showTooltip
+            color="#8b5cf6"
+            curve="natural"
+          />
         </Box>
       </CardContent>
     </Card>
