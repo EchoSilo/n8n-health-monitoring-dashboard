@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -48,6 +48,8 @@ import {
 interface RCASectionProps {
   errorId: string;
   useMockData?: boolean;
+  collapseTrigger?: number;
+  expandTrigger?: number;
 }
 
 // Mock RCA data for demo mode
@@ -145,13 +147,27 @@ const mockRCAData: RCAData = {
   updatedAt: new Date().toISOString(),
 };
 
-export function RCASection({ errorId, useMockData = false }: RCASectionProps) {
+export function RCASection({ errorId, useMockData = false, collapseTrigger, expandTrigger }: RCASectionProps) {
   const { data: rcaData, isLoading: isFetching } = useRCA(useMockData ? null : errorId);
   const runRCA = useRunRCA();
   const [showMock, setShowMock] = useState(false);
   const [selectedDepth, setSelectedDepth] = useState<RCADepth>('standard');
   const [isExpanded, setIsExpanded] = useState(true);
   const [mutationResult, setMutationResult] = useState<RCAData | null>(null);
+
+  // Respond to collapse trigger
+  useEffect(() => {
+    if (collapseTrigger && collapseTrigger > 0) {
+      setIsExpanded(false);
+    }
+  }, [collapseTrigger]);
+
+  // Respond to expand trigger
+  useEffect(() => {
+    if (expandTrigger && expandTrigger > 0) {
+      setIsExpanded(true);
+    }
+  }, [expandTrigger]);
 
   // For demo mode, use mock data; for API mode, prefer mutation result over cached query data
   const displayData = useMockData ? (showMock ? mockRCAData : null) : (mutationResult || rcaData);

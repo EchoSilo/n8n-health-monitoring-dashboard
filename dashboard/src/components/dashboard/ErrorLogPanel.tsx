@@ -36,8 +36,11 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import DataObjectIcon from '@mui/icons-material/DataObject';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import HistoryIcon from '@mui/icons-material/History';
+import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
+import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
 import { ErrorLog, ErrorSeverity, AIAnalysis } from '@/types';
-import { useErrors, useResolveError, useErrorWithAnalysis, useAnalyzeError, useErrorTrace, useRefreshTrace, ApiErrorLog, ExecutionTrace, ApiAIAnalysis, ExecutionChainContext, ExecutionSummary } from '@/hooks/api';
+import { useErrors, useResolveError, useErrorWithAnalysis, useAnalyzeError, useErrorTrace, useRefreshTrace, ApiErrorLog, ExecutionTrace, ApiAIAnalysis, ExecutionChainContext, ExecutionSummary, SimilarIssue } from '@/hooks/api';
 import { RCASection } from './RCASection';
 
 // Extended error type for display
@@ -200,9 +203,34 @@ const nodeStatusConfig: Record<string, { color: string; bgColor: string; icon: R
 };
 
 // Execution Trace Section Component
-function ExecutionTraceSection({ traces, isLoading }: { traces?: ExecutionTrace[]; isLoading?: boolean }) {
+function ExecutionTraceSection({
+  traces,
+  isLoading,
+  collapseTrigger,
+  expandTrigger,
+}: {
+  traces?: ExecutionTrace[];
+  isLoading?: boolean;
+  collapseTrigger?: number;
+  expandTrigger?: number;
+}) {
   const [expanded, setExpanded] = useState(true);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+
+  // Respond to collapse trigger
+  useEffect(() => {
+    if (collapseTrigger && collapseTrigger > 0) {
+      setExpanded(false);
+      setExpandedNodes(new Set());
+    }
+  }, [collapseTrigger]);
+
+  // Respond to expand trigger
+  useEffect(() => {
+    if (expandTrigger && expandTrigger > 0) {
+      setExpanded(true);
+    }
+  }, [expandTrigger]);
 
   const toggleNodeExpand = (nodeId: string) => {
     setExpandedNodes(prev => {
@@ -432,8 +460,30 @@ function ExecutionTraceSection({ traces, isLoading }: { traces?: ExecutionTrace[
 }
 
 // Execution Chain Visualization Component
-function ExecutionChainSection({ chain }: { chain: ExecutionChainContext }) {
+function ExecutionChainSection({
+  chain,
+  collapseTrigger,
+  expandTrigger,
+}: {
+  chain: ExecutionChainContext;
+  collapseTrigger?: number;
+  expandTrigger?: number;
+}) {
   const [expanded, setExpanded] = useState(true);
+
+  // Respond to collapse trigger
+  useEffect(() => {
+    if (collapseTrigger && collapseTrigger > 0) {
+      setExpanded(false);
+    }
+  }, [collapseTrigger]);
+
+  // Respond to expand trigger
+  useEffect(() => {
+    if (expandTrigger && expandTrigger > 0) {
+      setExpanded(true);
+    }
+  }, [expandTrigger]);
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -606,16 +656,34 @@ function AIAnalysisSection({
   analysis,
   isLoading,
   useMockData,
+  collapseTrigger,
+  expandTrigger,
 }: {
   errorId: string;
   analysis?: ApiAIAnalysis | null;
   isLoading?: boolean;
   useMockData?: boolean;
+  collapseTrigger?: number;
+  expandTrigger?: number;
 }) {
   const analyzeError = useAnalyzeError();
   const [showMock, setShowMock] = useState(false);
   const [deepInvestigate, setDeepInvestigate] = useState(false);
   const [expanded, setExpanded] = useState(true);
+
+  // Respond to collapse trigger
+  useEffect(() => {
+    if (collapseTrigger && collapseTrigger > 0) {
+      setExpanded(false);
+    }
+  }, [collapseTrigger]);
+
+  // Respond to expand trigger
+  useEffect(() => {
+    if (expandTrigger && expandTrigger > 0) {
+      setExpanded(true);
+    }
+  }, [expandTrigger]);
 
   // For demo mode, use mock analysis
   const displayAnalysis = useMockData ? (showMock ? mockAIAnalysis : null) : analysis;
@@ -832,47 +900,6 @@ function AIAnalysisSection({
           ))}
         </Box>
 
-        {/* Similar Issues */}
-        {displayAnalysis.similarIssues && displayAnalysis.similarIssues.length > 0 && (
-          <>
-            <Typography
-              variant="overline"
-              sx={{ color: 'text.secondary', letterSpacing: 1 }}
-            >
-              SIMILAR PAST ISSUES
-            </Typography>
-            <Box sx={{ mt: 1 }}>
-              {displayAnalysis.similarIssues.map((issue) => (
-                <Box
-                  key={issue.id}
-                  sx={{
-                    p: 1.5,
-                    mb: 1,
-                    bgcolor: 'background.paper',
-                    borderRadius: 1,
-                    border: 1,
-                    borderStyle: 'dashed',
-                    borderColor: 'divider',
-                  }}
-                >
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                    <CheckCircleIcon sx={{ fontSize: 14, color: 'success.main' }} />
-                    <Typography variant="caption" fontFamily="monospace">
-                      {issue.id}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      • {issue.workflow}
-                    </Typography>
-                  </Box>
-                  <Typography variant="body2" color="text.secondary">
-                    {issue.resolution}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
-          </>
-        )}
-
         {/* Provider info */}
         {'provider' in displayAnalysis && (
           <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
@@ -888,10 +915,154 @@ function AIAnalysisSection({
   );
 }
 
+// Similar Past Issues Section Component
+function SimilarIssuesSection({
+  similarIssues,
+  collapseTrigger,
+  expandTrigger,
+}: {
+  similarIssues: SimilarIssue[];
+  collapseTrigger?: number;
+  expandTrigger?: number;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  // Respond to collapse trigger
+  useEffect(() => {
+    if (collapseTrigger && collapseTrigger > 0) {
+      setExpanded(false);
+    }
+  }, [collapseTrigger]);
+
+  // Respond to expand trigger
+  useEffect(() => {
+    if (expandTrigger && expandTrigger > 0) {
+      setExpanded(true);
+    }
+  }, [expandTrigger]);
+
+  if (!similarIssues || similarIssues.length === 0) {
+    return null;
+  }
+
+  return (
+    <Card
+      sx={{
+        mb: 2,
+        border: 1,
+        borderColor: 'rgba(16, 185, 129, 0.3)',
+        borderRadius: 2,
+        bgcolor: (theme) =>
+          theme.palette.mode === 'dark' ? 'rgba(16, 185, 129, 0.05)' : 'rgba(16, 185, 129, 0.02)',
+      }}
+    >
+      <Box
+        sx={{
+          p: 2,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          borderBottom: expanded ? 1 : 0,
+          borderColor: 'rgba(16, 185, 129, 0.2)',
+          cursor: 'pointer',
+          '&:hover': { bgcolor: 'rgba(16, 185, 129, 0.05)' },
+        }}
+        onClick={() => setExpanded(!expanded)}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <HistoryIcon sx={{ color: '#10b981' }} />
+          <Typography variant="subtitle1" fontWeight={600} sx={{ color: '#10b981' }}>
+            Similar Past Issues
+          </Typography>
+          <Chip
+            size="small"
+            label={similarIssues.length}
+            sx={{
+              height: 20,
+              fontSize: '0.65rem',
+              bgcolor: 'rgba(16, 185, 129, 0.15)',
+              color: '#10b981',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+            }}
+          />
+        </Box>
+        {expanded ? (
+          <ExpandLessIcon sx={{ color: '#10b981' }} />
+        ) : (
+          <ExpandMoreIcon sx={{ color: '#10b981' }} />
+        )}
+      </Box>
+      <Collapse in={expanded}>
+        <Box sx={{ p: 2 }}>
+          {similarIssues.map((issue, index) => (
+            <Box
+              key={issue.id}
+              sx={{
+                p: 1.5,
+                mb: index < similarIssues.length - 1 ? 1.5 : 0,
+                bgcolor: (theme) =>
+                  theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.5)' : 'background.paper',
+                borderRadius: 1.5,
+                border: 1,
+                borderColor: 'divider',
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }}>
+                <CheckCircleIcon sx={{ fontSize: 16, color: '#10b981' }} />
+                <Typography variant="body2" fontWeight={600}>
+                  {issue.workflow}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    fontFamily: 'monospace',
+                    color: '#a78bfa',
+                    bgcolor: 'rgba(167, 139, 250, 0.1)',
+                    px: 0.75,
+                    py: 0.25,
+                    borderRadius: 0.5,
+                  }}
+                >
+                  {issue.id}
+                </Typography>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ pl: 3 }}>
+                {issue.resolution}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
+      </Collapse>
+    </Card>
+  );
+}
+
 // Stack Trace Section Component
-function StackTraceSection({ stackTrace }: { stackTrace: string }) {
+function StackTraceSection({
+  stackTrace,
+  collapseTrigger,
+  expandTrigger,
+}: {
+  stackTrace: string;
+  collapseTrigger?: number;
+  expandTrigger?: number;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Respond to collapse trigger
+  useEffect(() => {
+    if (collapseTrigger && collapseTrigger > 0) {
+      setExpanded(false);
+    }
+  }, [collapseTrigger]);
+
+  // Respond to expand trigger
+  useEffect(() => {
+    if (expandTrigger && expandTrigger > 0) {
+      setExpanded(true);
+    }
+  }, [expandTrigger]);
 
   const handleCopy = async () => {
     try {
@@ -1007,6 +1178,13 @@ function formatTimeAgo(date: Date): string {
 export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, useMockData = true, onViewAll }: ErrorLogPanelProps) {
   const [selectedError, setSelectedError] = useState<DisplayError | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Collapse/Expand all sections triggers
+  const [collapseTrigger, setCollapseTrigger] = useState(0);
+  const [expandTrigger, setExpandTrigger] = useState(0);
+
+  const handleCollapseAll = () => setCollapseTrigger(prev => prev + 1);
+  const handleExpandAll = () => setExpandTrigger(prev => prev + 1);
 
   // Fetch from API if not using mock data
   const { data: apiData, isLoading, error: fetchError } = useErrors(
@@ -1136,9 +1314,15 @@ export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, use
           borderRadius: 3,
           bgcolor: (theme) =>
             theme.palette.mode === 'dark' ? 'rgba(30, 41, 59, 0.5)' : 'background.paper',
+          ...(limit && {
+            height: 367, // Match WorkflowTable height when in limited view
+            display: 'flex',
+            flexDirection: 'column',
+          }),
         }}
       >
-        <List disablePadding>
+        <Box sx={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+          <List disablePadding>
           {errors.map((error, index) => {
             const severity = severityConfig[error.severity];
             return (
@@ -1292,7 +1476,8 @@ export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, use
               </ListItem>
             );
           })}
-        </List>
+          </List>
+        </Box>
 
         {limit && onViewAll && (
           <Box sx={{ p: 1.5, borderTop: 1, borderColor: 'divider' }}>
@@ -1348,9 +1533,29 @@ export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, use
                     {selectedError.id}
                   </Typography>
                 </Box>
-                <IconButton onClick={handleCloseDrawer} size="small">
-                  <CloseIcon />
-                </IconButton>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Tooltip title="Collapse all sections">
+                    <IconButton
+                      size="small"
+                      onClick={handleCollapseAll}
+                      sx={{ color: 'text.secondary' }}
+                    >
+                      <UnfoldLessIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Expand all sections">
+                    <IconButton
+                      size="small"
+                      onClick={handleExpandAll}
+                      sx={{ color: 'text.secondary' }}
+                    >
+                      <UnfoldMoreIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <IconButton onClick={handleCloseDrawer} size="small">
+                    <CloseIcon />
+                  </IconButton>
+                </Box>
               </Box>
               <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
                 {selectedError.message}
@@ -1377,6 +1582,8 @@ export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, use
               <ExecutionTraceSection
                 traces={fullErrorData?.execution?.traces}
                 isLoading={isLoadingFullError && !useMockData}
+                collapseTrigger={collapseTrigger}
+                expandTrigger={expandTrigger}
               />
 
               {/* AI Analysis Section */}
@@ -1385,23 +1592,42 @@ export function ErrorLogPanel({ limit, selectedServerId, errors: propErrors, use
                 analysis={fullErrorData?.aiAnalysis}
                 isLoading={isLoadingFullError && !useMockData}
                 useMockData={useMockData}
+                collapseTrigger={collapseTrigger}
+                expandTrigger={expandTrigger}
               />
+
+              {/* Similar Past Issues Section */}
+              {fullErrorData?.aiAnalysis?.similarIssues && (
+                <SimilarIssuesSection
+                  similarIssues={fullErrorData.aiAnalysis.similarIssues}
+                  collapseTrigger={collapseTrigger}
+                  expandTrigger={expandTrigger}
+                />
+              )}
 
               {/* Root Cause Analysis Section (5 Whys) */}
               <RCASection
                 errorId={selectedError.id}
                 useMockData={useMockData}
+                collapseTrigger={collapseTrigger}
+                expandTrigger={expandTrigger}
               />
 
               {/* Execution Chain Section (shown when deep investigation finds sub-workflows) */}
               {fullErrorData?.aiAnalysis?.executionChain && (
-                <ExecutionChainSection chain={fullErrorData.aiAnalysis.executionChain} />
+                <ExecutionChainSection
+                  chain={fullErrorData.aiAnalysis.executionChain}
+                  collapseTrigger={collapseTrigger}
+                  expandTrigger={expandTrigger}
+                />
               )}
 
               {/* Stack Trace */}
               {(selectedError.stackTrace || fullErrorData?.stackTrace) && (
                 <StackTraceSection
                   stackTrace={fullErrorData?.stackTrace || selectedError.stackTrace || ''}
+                  collapseTrigger={collapseTrigger}
+                  expandTrigger={expandTrigger}
                 />
               )}
             </Box>

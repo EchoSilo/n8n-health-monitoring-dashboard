@@ -34,7 +34,7 @@ import { Server, ServerFormData, User, TeamInvite, AppSettings } from '@/types';
 import { useServers, useCreateServer, useUpdateServer, useDeleteServer, useAutoSync } from '@/hooks/api/use-servers';
 import { useCurrentUser, useUsers, useUpdateProfile, useDeleteUser, useUpdateUser } from '@/hooks/api/use-users';
 import { useInvites, useCreateInvite, useRevokeInvite } from '@/hooks/api/use-invites';
-import { useRunningExecutions, useRecentExecutions } from '@/hooks/api/use-executions';
+import { useRunningExecutions, useRecentExecutions, useTodayExecutionMetrics } from '@/hooks/api/use-executions';
 
 const defaultSettings: AppSettings = {
   theme: 'system',
@@ -86,6 +86,7 @@ export default function DashboardPage() {
   const { data: apiInvites, isLoading: invitesLoading } = useInvites();
   const { data: runningExecutionsData } = useRunningExecutions();
   const { data: recentExecutionsData } = useRecentExecutions(100);
+  const { data: todayMetrics } = useTodayExecutionMetrics();
 
   // Auto-sync hook - polls servers at their configured intervals
   useAutoSync(status === 'authenticated');
@@ -413,7 +414,7 @@ export default function DashboardPage() {
         />
 
         {/* Metrics Cards */}
-        <MetricsCards metrics={metrics} />
+        <MetricsCards metrics={metrics} todayMetrics={todayMetrics} />
 
         {/* Navigation Tabs */}
         <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 4 }}>
@@ -486,7 +487,7 @@ export default function DashboardPage() {
           </Box>
 
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '2fr 1fr' }, gap: 4 }}>
-            <Box sx={{ minWidth: 0 }}>
+            <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <Typography
                 variant="h6"
                 sx={{
@@ -517,7 +518,7 @@ export default function DashboardPage() {
                 defaultSortOrder="desc"
               />
             </Box>
-            <Box sx={{ minWidth: 0 }}>
+            <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <Typography
                 variant="h6"
                 sx={{

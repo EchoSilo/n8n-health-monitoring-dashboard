@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 
 // Check if mock mode is enabled via environment variable
 const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
@@ -142,4 +143,76 @@ export function useRecentExecutions(limit = 100) {
     staleTime: USE_MOCK_DATA ? Infinity : undefined,
     retry: USE_MOCK_DATA ? false : 3,
   });
+}
+
+// Today's execution metrics interface
+export interface TodayExecutionMetrics {
+  totalToday: number;
+  successCount: number;
+  errorCount: number;
+  runningCount: number;
+  hourlyData: number[];
+}
+
+// Mock data for today's execution metrics (demo mode)
+const MOCK_TODAY_METRICS: TodayExecutionMetrics = {
+  totalToday: 1847,
+  successCount: 1792,
+  errorCount: 42,
+  runningCount: 13,
+  // Hourly execution counts (0-23 hours) - typical business day pattern
+  hourlyData: [12, 8, 5, 3, 4, 15, 45, 120, 185, 210, 198, 175, 160, 155, 142, 138, 125, 98, 55, 32, 28, 22, 18, 14],
+};
+
+// Hook to get today's execution metrics
+export function useTodayExecutionMetrics() {
+  // In API mode, fetch more executions to ensure we capture all of today's
+  const { data, isLoading, error } = useRecentExecutions(500);
+  const { data: runningData } = useRunningExecutions();
+
+  const metrics = useMemo<TodayExecutionMetrics>(() => {
+    // In mock mode, return mock metrics directly
+    if (USE_MOCK_DATA) {
+      return MOCK_TODAY_METRICS;
+    }
+
+    if (!data?.executions) {
+      return {
+        totalToday: 0,
+        successCount: 0,
+        errorCount: 0,
+        runningCount: runningData?.executions?.length ?? 0,
+        hourlyData: Array(24).fill(0),
+      };
+    }
+
+    const now = new Date();
+    const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    // Filter executions to only include last 24 hours
+    const todayExecutions = data.executions.filter(
+      (e) => new Date(e.startedAt) >= last24Hours
+    );
+
+    const successCount = todayExecutions.filter(e => e.status === 'success').length;
+    const errorCount = todayExecutions.filter(e => e.status === 'error').length;
+    const runningCount = runningData?.executions?.length ?? todayExecutions.filter(e => e.status === 'running').length;
+
+    // Build hourly data array (24 hours)
+    const hourlyData = Array(24).fill(0);
+    todayExecutions.forEach(e => {
+      const hour = new Date(e.startedAt).getHours();
+      hourlyData[hour]++;
+    });
+
+    return {
+      totalToday: todayExecutions.length,
+      successCount,
+      errorCount,
+      runningCount,
+      hourlyData,
+    };
+  }, [data, runningData]);
+
+  return { data: metrics, isLoading, error };
 }

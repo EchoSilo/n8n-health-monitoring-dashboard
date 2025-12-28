@@ -7,7 +7,7 @@ const querySchema = z.object({
   workflowId: z.string().optional(),
   serverId: z.string().optional(),
   status: z.enum(['SUCCESS', 'ERROR', 'RUNNING', 'WAITING', 'CANCELLED']).optional(),
-  limit: z.coerce.number().min(1).max(100).default(50),
+  limit: z.coerce.number().min(1).max(500).default(50),
   offset: z.coerce.number().min(0).default(0),
 });
 
